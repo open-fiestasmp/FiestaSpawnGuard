@@ -48,7 +48,7 @@ api-version: '1.21'
 depend: [FiestaSpawnGuard, AuthMe, LuckPerms]
 PLUGIN
 jar cf "$work/server/plugins/fixture.jar" -C "$work/classes" .
-(cd "$work/server"; exec nice -n 15 ionice -c3 timeout 240s java -Xms256M -Xmx1200M -XX:ActiveProcessorCount=2 -jar server.jar --nogui) > "$work/fixture.log" 2>&1 &
+(cd "$work/server"; exec nice -n 15 ionice -c3 timeout 300s java -Xms256M -Xmx1200M -XX:ActiveProcessorCount=2 -jar server.jar --nogui) > "$work/fixture.log" 2>&1 &
 pid=$!
 trap 'kill "$pid" 2>/dev/null || true' EXIT
 ready=false
@@ -60,7 +60,7 @@ const mc=require('minecraft-protocol');
  const c=mc.createClient({host:'127.0.0.1',port:Number(process.env.FIXTURE_PORT),username,version:'1.21.11',auth:'offline'});
  c.on('error',e=>console.error(username,e.message));
 },index*4000));
-setTimeout(()=>process.exit(0),55000);
+setTimeout(()=>process.exit(0),100000);
 NODE
 wait "$pid" || true
 rg 'GUARD_FIXTURE_|FiestaSpawnGuard.*(Enabled|failed)|Exception|ERROR' "$work/fixture.log" | tail -25

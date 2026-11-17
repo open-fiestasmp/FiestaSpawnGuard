@@ -22,5 +22,5 @@ permissions:
     default: op
     description: Manage any builder's trust list
   fiesta.tag.builder:
-    default: false
+    default: op
     description: Build and manage own trust within protected spawn

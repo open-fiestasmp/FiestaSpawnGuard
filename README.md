@@ -46,17 +46,17 @@ Changing configuration or replacing the JAR requires a restart. Avoid using plug
 | `/spawntag grant\|revoke <player> <tag>` | Tag staff | Manage a hidden tag. |
 | `/spawntag list <player>` | Tag staff | List directly assigned Fiesta tags. |
 
-In the menu, use the green dye to choose an **online** player. Click an existing helper and confirm to remove them. Use commands for offline players. Players must be known to the server; an unknown name is rejected. Helper access is not a builder tag, so helpers cannot open their own trust menu or grant access. The separate commands `/spawntrust` and `/spawntag` remain available. If another plugin owns `/trust`, resolve the conflict in your server's command configuration; this plugin also exposes Bukkit's namespaced command. A claim plugin's `/claim trust` is a different command but may have independent rules.
+In the menu, use the green dye to choose an **online** player. Click an existing helper and confirm to remove them. The list contains helpers, not builders; an empty list does not mean a builder tag failed. A builder may add and remove themselves as a helper for testing; this adds no building access. Use commands for offline players. Players must be known to the server; an unknown name is rejected. Helper access is not a builder tag, so helpers cannot open their own trust menu or grant access. The separate commands `/spawntrust` and `/spawntag` remain available. If another plugin owns `/trust`, resolve the conflict in your server's command configuration; this plugin also exposes Bukkit's namespaced command. A claim plugin's `/claim trust` is a different command but may have independent rules.
 
 ## Permissions
 
 | Permission | Default | Purpose |
 | --- | --- | --- |
-| `fiesta.tag.builder` | false | Build in protected spawn and manage the holder's own helpers. |
+| `fiesta.tag.builder` | op | Build in protected spawn and manage the holder's own helpers. |
 | `fiesta.spawntag.manage` | op | Grant, revoke, or inspect Fiesta tags. |
 | `fiesta.spawntrust.admin` | op | Manage another builder's trust list. |
 
-OP status alone does **not** bypass protected building: an authenticated operator must also be a builder or trusted helper. Avoid granting builder access by broad wildcard unless intended. Tags are permissions, not chat prefixes or suffixes. Use `/spawntag` for additional tag names; only the `builder` tag has behavior in this plugin.
+Operators receive the builder permission by default. Staff can remove that access, including their own, with `/trust remove <name> builder` and restore it with `/trust <name> builder`; the explicit denial overrides the OP default. An operator who is separately trusted by another builder may still build through that independent grant. AuthMe authentication remains required. Avoid granting builder access by broad wildcard unless intended. Tags are permissions, not chat prefixes or suffixes. Use `/spawntag` for additional tag names; only the `builder` tag has behavior in this plugin.
 
 ## Configuration and behavior
 

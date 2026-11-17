@@ -10,6 +10,8 @@ import net.luckperms.api.LuckPermsProvider;
 import net.luckperms.api.event.user.UserDataRecalculateEvent;
 import net.luckperms.api.model.user.User;
 import net.luckperms.api.node.Node;
+import net.luckperms.api.util.Tristate;
+import net.luckperms.api.query.QueryOptions;
 import org.bukkit.*;
 import org.bukkit.block.*;
 import org.bukkit.command.*;
@@ -62,7 +64,14 @@ public final class SpawnGuard extends JavaPlugin implements Listener {
  }
  private boolean inside(Location l){if(l==null||l.getWorld()==null||!world.equals(l.getWorld().getName()))return false;long dx=(l.getBlockX()>>4)-cx,dz=(l.getBlockZ()>>4)-cz;return dx*dx+dz*dz<=(long)radius*radius;}
  private boolean signedIn(Player p){try{return AuthMeApi.getInstance().isAuthenticated(p);}catch(Throwable e){return false;}}
- private boolean isBuilder(User u){return u!=null&&u.getCachedData().getPermissionData().checkPermission("fiesta.tag.builder").asBoolean();}
+ private boolean isBuilder(User u){
+  if(u==null)return false;
+  Player online=Bukkit.getPlayer(u.getUniqueId());if(online!=null)return online.hasPermission("fiesta.tag.builder");
+  Tristate value=u.getCachedData().getPermissionData().checkPermission("fiesta.tag.builder");
+  if(value==Tristate.TRUE)return true;
+  if(!Bukkit.getOfflinePlayer(u.getUniqueId()).isOp())return false;
+  return u.resolveInheritedNodes(QueryOptions.nonContextual()).stream().noneMatch(n->!n.getValue()&&(n.getKey().equals("fiesta.tag.builder")||n.getKey().equals("fiesta.tag.*")||n.getKey().equals("fiesta.*")||n.getKey().equals("*")));
+ }
  private boolean allowed(Player p){
   if(!ready||!signedIn(p))return false;
   if(p.hasPermission("fiesta.tag.builder"))return true;
@@ -130,11 +139,11 @@ public final class SpawnGuard extends JavaPlugin implements Listener {
   if(target==null){msg(s,"§cPlayer not found. They must have joined before.");return true;}
   UUID id=target.getUniqueId();
   if(action.equals("list")){
-   luck.getUserManager().loadUser(id).thenAccept(u->{String list=u.getNodes().stream().filter(n->n.getKey().startsWith("fiesta.tag.")&&n.getValue()).map(n->n.getKey().substring("fiesta.tag.".length())).sorted().collect(Collectors.joining(", "));Bukkit.getScheduler().runTask(this,()->msg(s,"§7Tags for "+target.getName()+": §f"+(list.isEmpty()?"none":list)));});return true;
+   luck.getUserManager().loadUser(id).thenAccept(u->Bukkit.getScheduler().runTask(this,()->{String list=u.getNodes().stream().filter(n->n.getKey().startsWith("fiesta.tag.")&&n.getValue()).map(n->n.getKey().substring("fiesta.tag.".length())).sorted().collect(Collectors.joining(", "));msg(s,"§7Assigned tags for "+target.getName()+": §f"+(list.isEmpty()?"none":list)+" §7| Builder access: §f"+(isBuilder(u)?"enabled":"disabled"));}));return true;
   }
   if(a.length!=3||(!action.equals("grant")&&!action.equals("revoke"))||!a[2].matches("[a-zA-Z0-9_-]{1,32}")){msg(s,"§e/spawntag <grant|revoke|list> <player> [tag]");return true;}
-  String tag=a[2].toLowerCase(Locale.ROOT);boolean giving=action.equals("grant");Node node=Node.builder("fiesta.tag."+tag).build();
-  luck.getUserManager().modifyUser(id,u->{if(giving)u.data().add(node);else u.data().remove(node);loadedGrantors.put(id,u);}).whenComplete((v,err)->Bukkit.getScheduler().runTask(this,()->{
+  String tag=a[2].toLowerCase(Locale.ROOT);boolean giving=action.equals("grant");Node node=Node.builder("fiesta.tag."+tag).build();Node denied=Node.builder("fiesta.tag."+tag).value(false).build();
+  luck.getUserManager().modifyUser(id,u->{if(tag.equals("builder")){u.data().remove(node);u.data().remove(denied);u.data().add(giving?node:denied);}else if(giving)u.data().add(node);else u.data().remove(node);loadedGrantors.put(id,u);}).whenComplete((v,err)->Bukkit.getScheduler().runTask(this,()->{
    if(err!=null){msg(s,"§cTag update failed; no success was reported.");getLogger().warning("Tag update failed: "+err);return;}
    if(!giving&&tag.equals("builder")){Set<UUID> old=grants.remove(id);if(old!=null)try{saveTrust();}catch(IOException e){grants.put(id,old);getLogger().severe("Trust save failed after builder revocation: "+e);msg(s,"§cCould not save trust revocation; contact an admin.");return;}}
    getLogger().info("Tag "+action+" "+tag+" for "+id+" by "+s.getName());msg(s,"§aTag "+tag+" "+(giving?"granted to ":"removed from ")+target.getName()+".");
@@ -156,7 +165,6 @@ public final class SpawnGuard extends JavaPlugin implements Listener {
   }
   if(!a[0].equalsIgnoreCase("add")&&!a[0].equalsIgnoreCase("remove")){msg(s,"§eUse add, remove, or list.");return true;}
   OfflinePlayer target=known(a[1]);if(target==null){msg(s,"§cPlayer not found. They must have joined before.");return true;}
-  if(target.getUniqueId().equals(owner)){msg(s,"§cA builder doesn't need to trust themselves.");return true;}
   UUID id=target.getUniqueId();boolean add=a[0].equalsIgnoreCase("add");
   luck.getUserManager().loadUser(owner).thenAccept(u->Bukkit.getScheduler().runTask(this,()->{
    if(s instanceof Player&&(!((Player)s).isOnline()||!canManage((Player)s,owner))){msg(s,"§cYou no longer have permission to manage this list.");return;}
@@ -187,16 +195,17 @@ public final class SpawnGuard extends JavaPlugin implements Listener {
    h.inventory.setItem(49,button(Material.ARROW,"§eCancel"));p.openInventory(h.inventory);return;
   }
   Set<UUID> current=grants.getOrDefault(owner,Collections.emptySet());
-  List<UUID> entries=(adding?Bukkit.getOnlinePlayers().stream().map(Player::getUniqueId).filter(id->!id.equals(owner)&&!current.contains(id)):current.stream()).sorted(java.util.Comparator.comparing(id->Optional.ofNullable(Bukkit.getOfflinePlayer(id).getName()).orElse(id.toString()),String.CASE_INSENSITIVE_ORDER)).collect(Collectors.toList());
+  List<UUID> entries=(adding?Bukkit.getOnlinePlayers().stream().map(Player::getUniqueId).filter(id->!current.contains(id)):current.stream()).sorted(java.util.Comparator.comparing(id->Optional.ofNullable(Bukkit.getOfflinePlayer(id).getName()).orElse(id.toString()),String.CASE_INSENSITIVE_ORDER)).collect(Collectors.toList());
   int maxPage=Math.max(0,(entries.size()-1)/45);page=Math.min(Math.max(0,page),maxPage);
   if(page!=h.page){showTrustMenu(p,owner,page,adding,null);return;}
   for(int i=page*45;i<Math.min(entries.size(),page*45+45);i++){
-   UUID id=entries.get(i);OfflinePlayer target=Bukkit.getOfflinePlayer(id);ItemStack head=new ItemStack(Material.PLAYER_HEAD);ItemMeta meta=head.getItemMeta();meta.setDisplayName("§f"+Optional.ofNullable(target.getName()).orElse(id.toString()));meta.setLore(List.of(adding?"§aClick to add as a helper":"§cClick to remove from this list"));head.setItemMeta(meta);int slot=i-page*45;h.entries.put(slot,id);h.inventory.setItem(slot,head);
+   UUID id=entries.get(i);OfflinePlayer target=Bukkit.getOfflinePlayer(id);ItemStack head=new ItemStack(Material.PLAYER_HEAD);ItemMeta meta=head.getItemMeta();meta.setDisplayName("§f"+Optional.ofNullable(target.getName()).orElse(id.toString()));meta.setLore(id.equals(owner)?List.of(adding?"§aClick to add yourself for testing":"§cClick to remove yourself", "§7This grants no extra access."):List.of(adding?"§aClick to add as a helper":"§cClick to remove from this list"));head.setItemMeta(meta);int slot=i-page*45;h.entries.put(slot,id);h.inventory.setItem(slot,head);
   }
+  if(entries.isEmpty())h.inventory.setItem(22,button(Material.PAPER,adding?"§eNo online players to add":"§eNo helpers on this list","§7This menu lists helpers, not builders.","§7Use the green dye below to add someone."));
   if(page>0)h.inventory.setItem(45,button(Material.ARROW,"§ePrevious page"));
   if(page<maxPage)h.inventory.setItem(53,button(Material.ARROW,"§eNext page"));
   h.inventory.setItem(49,adding?button(Material.ARROW,"§eBack to trusted players","§7Offline player? Use /trust <name> player."):button(Material.LIME_DYE,"§aAdd an online player","§7Offline player? Use /trust <name> player."));
-  h.inventory.setItem(47,button(Material.BOOK,"§eSpawn trust","§7Helpers can build at spawn,","§7but cannot add others."));p.openInventory(h.inventory);
+  h.inventory.setItem(47,button(Material.BOOK,"§eHelpers, not builder tags","§7Helpers can build at spawn,","§7but cannot add others.","§7To remove a builder tag, use","§f/trust remove <name> builder"));p.openInventory(h.inventory);
  }
  private void nextMenu(Player p,TrustMenu current,int page,boolean adding,UUID confirm){Bukkit.getScheduler().runTask(this,()->{if(p.isOnline()&&p.getOpenInventory().getTopInventory().getHolder()==current)showTrustMenu(p,current.owner,page,adding,confirm);});}
  @EventHandler(priority=EventPriority.HIGHEST) public void menuClick(InventoryClickEvent e){
@@ -228,21 +237,25 @@ public final class SpawnGuard extends JavaPlugin implements Listener {
  @EventHandler(priority=EventPriority.HIGHEST,ignoreCancelled=true) public void interact(PlayerInteractEvent e){
   Block b=e.getClickedBlock();if(b==null||!blocked(e.getPlayer(),b.getLocation()))return;
   Material t=b.getType();if(e.getAction()==org.bukkit.event.block.Action.PHYSICAL){if(t==Material.FARMLAND||t==Material.TURTLE_EGG||t==Material.SNIFFER_EGG)e.setCancelled(true);return;}
-  if(e.getAction()==org.bukkit.event.block.Action.RIGHT_CLICK_BLOCK){String n=t.name();
-   boolean safeDoor=(n.endsWith("_DOOR")||n.endsWith("_GATE"))&&!n.startsWith("IRON_");
-   if(!safeDoor)e.setUseInteractedBlock(Event.Result.DENY);
-   ItemStack item=e.getItem();if(item!=null&&!item.getType().isAir())e.setUseItemInHand(Event.Result.DENY);
+  if(e.getAction()==org.bukkit.event.block.Action.RIGHT_CLICK_BLOCK){
+   if(b.getState() instanceof InventoryHolder||b.getState() instanceof org.bukkit.block.Sign||t==Material.FLOWER_POT||t.name().startsWith("POTTED_"))e.setUseInteractedBlock(Event.Result.DENY);
+   ItemStack item=e.getItem();if(item!=null&&!item.getType().isAir()){
+    Material material=item.getType();String name=material.name();
+    boolean modifiesBlock=name.endsWith("_HOE")||name.endsWith("_SHOVEL")||name.endsWith("_AXE")||name.endsWith("_SPAWN_EGG")||name.endsWith("_BOAT")||name.endsWith("_RAFT")||name.endsWith("_MINECART")||name.endsWith("_BUCKET")&&!name.equals("MILK_BUCKET")||material==Material.ARMOR_STAND||material==Material.SHEARS||material==Material.BRUSH||material==Material.FLINT_AND_STEEL||material==Material.FIRE_CHARGE||material==Material.BONE_MEAL||material==Material.END_CRYSTAL||material==Material.GLOW_INK_SAC||material==Material.INK_SAC||name.endsWith("_DYE")||material==Material.HONEYCOMB;
+    if(modifiesBlock)e.setUseItemInHand(Event.Result.DENY);
+   }
   }
  }
  @EventHandler(priority=EventPriority.HIGHEST,ignoreCancelled=true) public void entityInteract(PlayerInteractEntityEvent e){if(blocked(e.getPlayer(),e.getRightClicked().getLocation())&&!(e.getRightClicked() instanceof Player))e.setCancelled(true);}
- @EventHandler(priority=EventPriority.HIGHEST,ignoreCancelled=true) public void entityDamage(EntityDamageByEntityEvent e){if(e.getEntity() instanceof Player)return;Player p=actor(e.getDamager());if(p!=null&&blocked(p,e.getEntity().getLocation()))e.setCancelled(true);}
+ @EventHandler(priority=EventPriority.HIGHEST,ignoreCancelled=true) public void entityDamage(EntityDamageByEntityEvent e){if(e.getEntity() instanceof Player||e.getEntity() instanceof Enemy)return;Player p=actor(e.getDamager());if(p!=null&&blocked(p,e.getEntity().getLocation()))e.setCancelled(true);}
  @EventHandler(priority=EventPriority.HIGHEST,ignoreCancelled=true) public void environmentalHanging(org.bukkit.event.hanging.HangingBreakEvent e){if(inside(e.getEntity().getLocation())&&e.getCause()!=org.bukkit.event.hanging.HangingBreakEvent.RemoveCause.ENTITY)e.setCancelled(true);}
  @EventHandler(priority=EventPriority.HIGHEST,ignoreCancelled=true) public void explosiveDamage(EntityDamageEvent e){if(!(e.getEntity() instanceof Player)&&inside(e.getEntity().getLocation())&&(e.getCause()==EntityDamageEvent.DamageCause.ENTITY_EXPLOSION||e.getCause()==EntityDamageEvent.DamageCause.BLOCK_EXPLOSION))e.setCancelled(true);}
- @EventHandler(priority=EventPriority.HIGHEST,ignoreCancelled=true) public void inventoryClick(InventoryClickEvent e){Location l=e.getView().getTopInventory().getLocation();if(e.getWhoClicked() instanceof Player&&blocked((Player)e.getWhoClicked(),l))e.setCancelled(true);}
- @EventHandler(priority=EventPriority.HIGHEST,ignoreCancelled=true) public void inventoryDrag(InventoryDragEvent e){Location l=e.getView().getTopInventory().getLocation();if(e.getWhoClicked() instanceof Player&&blocked((Player)e.getWhoClicked(),l))e.setCancelled(true);}
+ private boolean worldContainer(Inventory inv){InventoryHolder h=inv.getHolder();return h instanceof BlockState||h instanceof DoubleChest||h instanceof Entity&&!(h instanceof Player);}
+ @EventHandler(priority=EventPriority.HIGHEST,ignoreCancelled=true) public void inventoryClick(InventoryClickEvent e){Inventory top=e.getView().getTopInventory();if(worldContainer(top)&&e.getWhoClicked() instanceof Player&&blocked((Player)e.getWhoClicked(),top.getLocation()))e.setCancelled(true);}
+ @EventHandler(priority=EventPriority.HIGHEST,ignoreCancelled=true) public void inventoryDrag(InventoryDragEvent e){Inventory top=e.getView().getTopInventory();if(worldContainer(top)&&e.getWhoClicked() instanceof Player&&blocked((Player)e.getWhoClicked(),top.getLocation()))e.setCancelled(true);}
  @EventHandler(priority=EventPriority.HIGHEST,ignoreCancelled=true) public void entityBreak(org.bukkit.event.hanging.HangingBreakByEntityEvent e){Player p=actor(e.getRemover());if(p!=null&&blocked(p,e.getEntity().getLocation()))e.setCancelled(true);}
  @EventHandler(priority=EventPriority.HIGHEST,ignoreCancelled=true) public void entityPlace(org.bukkit.event.hanging.HangingPlaceEvent e){if(e.getPlayer()!=null&&blocked(e.getPlayer(),e.getBlock().getLocation()))e.setCancelled(true);}
- @EventHandler(priority=EventPriority.HIGHEST,ignoreCancelled=true) public void container(InventoryOpenEvent e){if(!(e.getPlayer() instanceof Player))return;Location l=e.getInventory().getLocation();if(blocked((Player)e.getPlayer(),l))e.setCancelled(true);}
+ @EventHandler(priority=EventPriority.HIGHEST,ignoreCancelled=true) public void container(InventoryOpenEvent e){if(!(e.getPlayer() instanceof Player)||!worldContainer(e.getInventory()))return;Location l=e.getInventory().getLocation();if(blocked((Player)e.getPlayer(),l))e.setCancelled(true);}
  @EventHandler(priority=EventPriority.HIGHEST,ignoreCancelled=true) public void explosion(EntityExplodeEvent e){e.blockList().removeIf(b->inside(b.getLocation()));}
  @EventHandler(priority=EventPriority.HIGHEST,ignoreCancelled=true) public void explosion(BlockExplodeEvent e){e.blockList().removeIf(b->inside(b.getLocation()));}
  @EventHandler(priority=EventPriority.HIGHEST,ignoreCancelled=true) public void entityChange(EntityChangeBlockEvent e){if(inside(e.getBlock().getLocation()))e.setCancelled(true);}
