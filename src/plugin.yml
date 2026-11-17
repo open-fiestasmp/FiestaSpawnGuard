@@ -1,0 +1,26 @@
+name: FiestaSpawnGuard
+version: 1.0.0
+main: com.fiesta.spawnguard.SpawnGuard
+api-version: '1.21'
+depend: [LuckPerms, AuthMe]
+softdepend: [floodgate]
+commands:
+  spawntag:
+    description: Manage hidden Fiesta tags
+    usage: /spawntag <grant|revoke|list> <player> [tag]
+  spawntrust:
+    description: Manage spawn builder trust
+    usage: /spawntrust <add|remove|list> [player] [builder]
+  trust:
+    description: Give or remove spawn builder or helper access
+    usage: /trust <player> <builder|player> [builder-owner]
+permissions:
+  fiesta.spawntag.manage:
+    default: op
+    description: Manage Fiesta tags
+  fiesta.spawntrust.admin:
+    default: op
+    description: Manage any builder's trust list
+  fiesta.tag.builder:
+    default: false
+    description: Build and manage own trust within protected spawn

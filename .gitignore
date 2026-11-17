@@ -1,0 +1,9 @@
+/build/
+/node_modules/
+*.log
+*.jar
+*.class
+.env
+.env.*
+plugins/
+trust.yml
