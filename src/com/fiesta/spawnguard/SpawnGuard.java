@@ -36,13 +36,15 @@ public final class SpawnGuard extends JavaPlugin implements Listener {
  private final Set<UUID> grantorIds=ConcurrentHashMap.newKeySet();
  private boolean ready=false;
  private boolean authApiWarningLogged=false;
+ private boolean trustStoreHealthy=true;
  @Override public void onEnable(){
   try{
    saveDefaultConfig(); world=getConfig().getString("world","world");
    cx=Math.floorDiv(getConfig().getInt("center-x",0),16);cz=Math.floorDiv(getConfig().getInt("center-z",0),16);
    radius=getConfig().getInt("radius-chunks",32);
    if(radius<16||radius>64||Bukkit.getWorld(world)==null)throw new IllegalStateException("Invalid spawn protection configuration");
-   luck=LuckPermsProvider.get();trustFile=new File(getDataFolder(),"trust.yml");loadTrust();
+   luck=LuckPermsProvider.get();trustFile=new File(getDataFolder(),"trust.yml");
+   try{loadTrust();}catch(IOException ex){getLogger().severe("Could not load trust.yml; helper access and trust-list commands are disabled until staff restore the file and restart. The file was left untouched.");}
    grantorIds.addAll(grants.keySet());
    for(UUID builder:grantorIds)luck.getUserManager().loadUser(builder).whenComplete((user,error)->{
     if(error!=null){getLogger().warning("Could not load builder permissions for "+builder+": "+error);return;}
@@ -54,13 +56,20 @@ public final class SpawnGuard extends JavaPlugin implements Listener {
   }catch(Exception e){getLogger().severe("Spawn guard startup failed: "+e);Bukkit.getPluginManager().disablePlugin(this);}
  }
  private void loadTrust()throws IOException{
-  if(!trustFile.exists())return;
-  YamlConfiguration cfg=new YamlConfiguration();try{cfg.load(trustFile);}catch(Exception ex){throw new IOException("Cannot load trust file",ex);}
-  for(String key:cfg.getKeys(false)){
-   UUID owner=UUID.fromString(key);Set<UUID> targets=new HashSet<>();
-   for(String value:cfg.getStringList(key))targets.add(UUID.fromString(value));
-   grants.put(owner,targets);
-  }
+  grants.clear();
+  if(!trustFile.exists()){trustStoreHealthy=true;return;}
+  Map<UUID,Set<UUID>> loaded=new HashMap<>();YamlConfiguration cfg=new YamlConfiguration();
+  try{
+   cfg.load(trustFile);
+   for(String key:cfg.getKeys(false)){
+    UUID owner=UUID.fromString(key);Object raw=cfg.get(key);
+    if(!(raw instanceof List<?> values))throw new IOException("Invalid helper list");
+    Set<UUID> targets=new HashSet<>();
+    for(Object value:values){if(!(value instanceof String target))throw new IOException("Invalid helper UUID");targets.add(UUID.fromString(target));}
+    loaded.put(owner,targets);
+   }
+  }catch(Exception ex){trustStoreHealthy=false;throw new IOException("Cannot load trust file",ex);}
+  grants.putAll(loaded);trustStoreHealthy=true;
  }
  private void saveTrust()throws IOException{
   YamlConfiguration cfg=new YamlConfiguration();for(var e:grants.entrySet())cfg.set(e.getKey().toString(),e.getValue().stream().map(UUID::toString).sorted().toList());
@@ -156,6 +165,7 @@ public final class SpawnGuard extends JavaPlugin implements Listener {
  }
  private boolean trust(CommandSender s,String[] a){return trust(s,a,null);}
  private boolean trust(CommandSender s,String[] a,Runnable onSuccess){
+  if(!trustStoreHealthy){msg(s,"§cThe trust file is unreadable. Helpers are denied until staff restore it and restart the server.");return true;}
   if(a.length<1||(!a[0].equalsIgnoreCase("list")&&a.length<2)){msg(s,"§e/spawntrust <add|remove|list> [player] [builder]");return true;}
   boolean admin=s.hasPermission("fiesta.spawntrust.admin");UUID owner;
   if(a.length>=3||(a[0].equalsIgnoreCase("list")&&a.length>=2)){
@@ -192,6 +202,7 @@ public final class SpawnGuard extends JavaPlugin implements Listener {
  }
  private ItemStack button(Material material,String title,String... lore){ItemStack i=new ItemStack(material);ItemMeta m=i.getItemMeta();m.setDisplayName(title);m.setLore(Arrays.asList(lore));i.setItemMeta(m);return i;}
  private void showTrustMenu(Player p,UUID owner,int page,boolean adding,UUID confirm){
+  if(!trustStoreHealthy){msg(p,"§cThe trust file is unreadable. Helpers are denied until staff restore it and restart the server.");return;}
   if(!p.isOnline()||!canManage(p,owner))return;
   String ownerName=Optional.ofNullable(Bukkit.getOfflinePlayer(owner).getName()).orElse(owner.toString());
   TrustMenu h=new TrustMenu(owner,page,adding,confirm);h.inventory=Bukkit.createInventory(h,54,"§2Spawn trust: "+ownerName);

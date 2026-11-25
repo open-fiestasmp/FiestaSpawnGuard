@@ -15,11 +15,11 @@ import org.bukkit.entity.EntityType;
 import org.bukkit.plugin.java.JavaPlugin;
 import fr.xephi.authme.api.v3.AuthMeApi;
 public final class GuardFixture extends JavaPlugin implements Listener {
- private final Set<UUID> authenticated=new HashSet<>();private boolean started=false;
+ private final Set<UUID> authenticated=new HashSet<>();private final String fixturePassword="FixturePass"+UUID.randomUUID().toString().substring(0,3)+"!";private boolean started=false;
  private void check(boolean value,String why){if(!value)throw new AssertionError(why);}
  public void onEnable(){Bukkit.getPluginManager().registerEvents(this,this);getLogger().info("GUARD_FIXTURE_READY");}
  @EventHandler public void join(PlayerJoinEvent e){Player p=e.getPlayer();Bukkit.getScheduler().runTaskLater(this,()->{
-  try{AuthMeApi.getInstance().forceRegister(p,"FixturePass123!",true);Bukkit.getScheduler().runTaskLater(this,()->{
+  try{AuthMeApi.getInstance().forceRegister(p,fixturePassword,true);Bukkit.getScheduler().runTaskLater(this,()->{
    if(!AuthMeApi.getInstance().isAuthenticated(p))AuthMeApi.getInstance().forceLogin(p);
    Bukkit.getScheduler().runTaskLater(this,()->{
     if(AuthMeApi.getInstance().isAuthenticated(p))authenticated.add(p.getUniqueId());
@@ -147,11 +147,36 @@ public final class GuardFixture extends JavaPlugin implements Listener {
     Bukkit.getScheduler().runTaskLater(this,()->{try{
      check(!breaking(v,in),"operator helper access persists while owner offline");
      Bukkit.dispatchCommand(Bukkit.getConsoleSender(),"trust remove GuardFriend builder");
-     Bukkit.getScheduler().runTaskLater(this,()->{try{check(breaking(v,in),"offline operator revocation removes helper access");getLogger().info("GUARD_FIXTURE_PASS");Bukkit.shutdown();}catch(Throwable t){fail(t);}},50L);
+     Bukkit.getScheduler().runTaskLater(this,()->{try{check(breaking(v,in),"offline operator revocation removes helper access");corruptTrustFile(v,in);}catch(Throwable t){fail(t);}},50L);
     }catch(Throwable t){fail(t);}},40L);
    }catch(Throwable t){fail(t);}},50L);
    }catch(Throwable t){fail(t);}},40L);
   }catch(Throwable t){fail(t);}},40L);}catch(Throwable t){fail(t);}},5L);
+ }catch(Throwable t){fail(t);}}
+ private void corruptTrustFile(Player visitor,Location in){try{
+  Bukkit.dispatchCommand(Bukkit.getConsoleSender(),"trust GuardFriend builder");
+  Bukkit.getScheduler().runTaskLater(this,()->{try{
+   Bukkit.dispatchCommand(Bukkit.getConsoleSender(),"trust GuardVisitor player GuardFriend");
+   Bukkit.getScheduler().runTaskLater(this,()->{try{
+    check(!breaking(visitor,in),"helper access works before trust file corruption");
+    org.bukkit.plugin.Plugin guard=Bukkit.getPluginManager().getPlugin("FiestaSpawnGuard");
+    java.nio.file.Path trust=guard.getDataFolder().toPath().resolve("trust.yml");String corrupt="not: [valid";
+    java.nio.file.Files.writeString(trust,corrupt,java.nio.charset.StandardCharsets.UTF_8);
+    java.lang.reflect.Method load=guard.getClass().getDeclaredMethod("loadTrust");load.setAccessible(true);boolean rejected=false;
+    try{load.invoke(guard);}catch(java.lang.reflect.InvocationTargetException ex){rejected=true;}
+    java.lang.reflect.Field healthy=guard.getClass().getDeclaredField("trustStoreHealthy");healthy.setAccessible(true);
+    check(rejected&&!healthy.getBoolean(guard)&&guard.isEnabled(),"bad trust data disables helpers, not spawn protection");
+    check(breaking(visitor,in),"corrupt trust data grants no helper access");
+    Bukkit.dispatchCommand(Bukkit.getConsoleSender(),"lp user GuardVisitor permission set fiesta.tag.builder true");
+    Bukkit.getScheduler().runTaskLater(this,()->{try{
+     check(!breaking(visitor,in),"direct builder access remains available with bad trust data");
+     Bukkit.dispatchCommand(visitor,"trust");Object holder=visitor.getOpenInventory().getTopInventory().getHolder();
+     check(holder==null||!holder.getClass().getName().contains("TrustMenu"),"GUI stays closed while trust data is unreadable");
+     check(java.nio.file.Files.readString(trust).equals(corrupt),"corrupt trust data is not overwritten");
+     getLogger().info("GUARD_FIXTURE_PASS");Bukkit.shutdown();
+    }catch(Throwable t){fail(t);}},40L);
+   }catch(Throwable t){fail(t);}},50L);
+  }catch(Throwable t){fail(t);}},50L);
  }catch(Throwable t){fail(t);}}
  private void fail(Throwable t){getLogger().severe("GUARD_FIXTURE_FAIL: "+t);t.printStackTrace();Bukkit.getScheduler().runTask(this,Bukkit::shutdown);}
 }

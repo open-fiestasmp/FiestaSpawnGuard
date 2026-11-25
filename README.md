@@ -62,6 +62,8 @@ Operators receive the builder permission by default. Staff can remove that acces
 
 See [Configuration and protection](docs/CONFIGURATION.md) for the chunk-radius calculation, trust persistence, protected events, and important limits. See [Operations](docs/OPERATIONS.md) for deployment, troubleshooting, and recovery. Read the limitations before relying on it to prevent griefing.
 
+If the trust file is unreadable, the plugin keeps spawn protection enabled, denies helper access, and leaves the file untouched for staff recovery. Direct builders can still build; the trust menu and helper commands stay unavailable until the file is restored and the server is restarted.
+
 ## Project status
 
 This is a server-specific plugin extracted into a standalone source repository. The included fixture exercises protection, trust delegation and GUI behavior on an isolated local server, but it is not a complete security audit. No production player data, server configuration, credentials, server JARs, or trust lists are included. The repository does not grant a license; contact the authors before redistribution or reuse.
