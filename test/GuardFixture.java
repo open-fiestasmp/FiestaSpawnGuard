@@ -45,6 +45,9 @@ public final class GuardFixture extends JavaPlugin implements Listener {
   Entity zombie=w.spawnEntity(in,EntityType.ZOMBIE),cow=w.spawnEntity(in,EntityType.COW);
   EntityDamageByEntityEvent hostile=new EntityDamageByEntityEvent(v,zombie,DamageCause.ENTITY_ATTACK,1.0);Bukkit.getPluginManager().callEvent(hostile);check(!hostile.isCancelled(),"visitor can fight hostile mobs");
   EntityDamageByEntityEvent passive=new EntityDamageByEntityEvent(v,cow,DamageCause.ENTITY_ATTACK,1.0);Bukkit.getPluginManager().callEvent(passive);check(passive.isCancelled(),"visitor cannot damage protected animals");zombie.remove();cow.remove();
+  Entity villager=w.spawnEntity(in,EntityType.VILLAGER),stand=w.spawnEntity(in,EntityType.ARMOR_STAND);
+  org.bukkit.event.player.PlayerInteractEntityEvent trade=new org.bukkit.event.player.PlayerInteractEntityEvent(v,villager);Bukkit.getPluginManager().callEvent(trade);check(!trade.isCancelled(),"visitor can interact with villagers");
+  org.bukkit.event.player.PlayerInteractEntityEvent armor=new org.bukkit.event.player.PlayerInteractEntityEvent(v,stand);Bukkit.getPluginManager().callEvent(armor);check(armor.isCancelled(),"visitor cannot alter protected armor stands");villager.remove();stand.remove();
   java.util.List<org.bukkit.block.Block> blast=new java.util.ArrayList<>();blast.add(in.getBlock());blast.add(out.getBlock());
   BlockExplodeEvent explode=new BlockExplodeEvent(out.getBlock(),out.getBlock().getState(),blast,0.0f,org.bukkit.ExplosionResult.DESTROY);
   Bukkit.getPluginManager().callEvent(explode);check(!explode.blockList().contains(in.getBlock())&&explode.blockList().contains(out.getBlock()),"explosion protects only spawn blocks");
@@ -58,6 +61,11 @@ public final class GuardFixture extends JavaPlugin implements Listener {
   check(b.hasPermission("fiesta.tag.builder"),"builder permission set via LuckPerms");
   check(!breaking(b,in),"builder allowed inside");
   check(breaking(f,in),"friend blocked before trust");
+ Bukkit.dispatchCommand(b,"trust");
+ check(b.getOpenInventory().getTopInventory().getHolder().getClass().getName().contains("TrustMenu"),"builder opens empty trust menu");
+ check(b.getOpenInventory().getTopInventory().getItem(22).getType()==Material.PAPER,"empty trust menu explains that there are no helpers");
+ check(b.getOpenInventory().getTopInventory().getItem(49).getType()==Material.LIME_DYE,"empty trust menu offers to add an online player");
+ b.closeInventory();
   Bukkit.dispatchCommand(b,"trust GuardFriend player");
   Bukkit.getScheduler().runTaskLater(this,()->afterTrust(b,f,v,in),80L);
  }catch(Throwable t){fail(t);}}

@@ -13,7 +13,7 @@ A Purpur plugin for a protected spawn area with invisible builder tags and build
 
 ## Requirements and compatibility
 
-This version was developed and tested with **Purpur 1.21.11**, LuckPerms **5.5.71**, AuthMe **6.0.0-Paper**, and Java **21 or newer**. Those versions and filenames are required by the provided build and integration-test scripts. Other versions, Bukkit derivatives, proxies, and Bedrock/Floodgate authentication have not been verified. LuckPerms and AuthMe are required at runtime; Floodgate is an optional soft dependency, not a guarantee of Bedrock compatibility.
+This version is developed for **Purpur 1.21.11**, LuckPerms **5.5.71**, AuthMe **6.0.1-Paper**, and Java **21 or newer**. Build and fixture scripts use the single enabled `AuthMe-*-Paper.jar` in the supplied server directory; set `AUTHME_JAR` if you need to choose one explicitly. Other versions, Bukkit derivatives, proxies, and Bedrock/Floodgate authentication have not been verified. LuckPerms and AuthMe are required at runtime; Floodgate is an optional soft dependency, not a guarantee of Bedrock compatibility.
 
 This plugin is designed for servers using AuthMe, including offline-mode servers. Offline-mode servers need a carefully configured authentication and network security setup; installing this plugin does not provide account authentication or secure a proxy on its own.
 

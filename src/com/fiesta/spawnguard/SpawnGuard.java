@@ -25,7 +25,6 @@ import org.bukkit.event.player.*;
 import org.bukkit.event.vehicle.*;
 import org.bukkit.inventory.*;
 import org.bukkit.inventory.meta.*;
-import org.bukkit.plugin.Plugin;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.projectiles.ProjectileSource;
 import fr.xephi.authme.api.v3.AuthMeApi;
@@ -34,7 +33,9 @@ public final class SpawnGuard extends JavaPlugin implements Listener {
  private LuckPerms luck; private String world; private int cx,cz,radius; private File trustFile;
  private final Map<UUID,Set<UUID>> grants=new HashMap<>();
  private final Map<UUID,User> loadedGrantors=new ConcurrentHashMap<>();
+ private final Set<UUID> grantorIds=ConcurrentHashMap.newKeySet();
  private boolean ready=false;
+ private boolean authApiWarningLogged=false;
  @Override public void onEnable(){
   try{
    saveDefaultConfig(); world=getConfig().getString("world","world");
@@ -42,8 +43,12 @@ public final class SpawnGuard extends JavaPlugin implements Listener {
    radius=getConfig().getInt("radius-chunks",32);
    if(radius<16||radius>64||Bukkit.getWorld(world)==null)throw new IllegalStateException("Invalid spawn protection configuration");
    luck=LuckPermsProvider.get();trustFile=new File(getDataFolder(),"trust.yml");loadTrust();
-   for(UUID builder:grants.keySet())luck.getUserManager().loadUser(builder).thenAccept(user->loadedGrantors.put(builder,user));
-   luck.getEventBus().subscribe(this,UserDataRecalculateEvent.class,e->loadedGrantors.put(e.getUser().getUniqueId(),e.getUser()));
+   grantorIds.addAll(grants.keySet());
+   for(UUID builder:grantorIds)luck.getUserManager().loadUser(builder).whenComplete((user,error)->{
+    if(error!=null){getLogger().warning("Could not load builder permissions for "+builder+": "+error);return;}
+    if(user!=null)loadedGrantors.put(builder,user);
+   });
+   luck.getEventBus().subscribe(this,UserDataRecalculateEvent.class,e->{UUID id=e.getUser().getUniqueId();if(grantorIds.contains(id))loadedGrantors.put(id,e.getUser());});
    Bukkit.getPluginManager().registerEvents(this,this);ready=true;
    getLogger().info("Enabled spawn guard for "+world+" centered at chunk "+cx+","+cz+" radius "+radius+"; trusts="+grants.values().stream().mapToInt(Set::size).sum());
   }catch(Exception e){getLogger().severe("Spawn guard startup failed: "+e);Bukkit.getPluginManager().disablePlugin(this);}
@@ -63,7 +68,7 @@ public final class SpawnGuard extends JavaPlugin implements Listener {
   try{Files.move(tmp.toPath(),trustFile.toPath(),StandardCopyOption.REPLACE_EXISTING,StandardCopyOption.ATOMIC_MOVE);}catch(AtomicMoveNotSupportedException ex){Files.move(tmp.toPath(),trustFile.toPath(),StandardCopyOption.REPLACE_EXISTING);}
  }
  private boolean inside(Location l){if(l==null||l.getWorld()==null||!world.equals(l.getWorld().getName()))return false;long dx=(l.getBlockX()>>4)-cx,dz=(l.getBlockZ()>>4)-cz;return dx*dx+dz*dz<=(long)radius*radius;}
- private boolean signedIn(Player p){try{return AuthMeApi.getInstance().isAuthenticated(p);}catch(Throwable e){return false;}}
+ private boolean signedIn(Player p){try{return AuthMeApi.getInstance().isAuthenticated(p);}catch(RuntimeException e){if(!authApiWarningLogged){authApiWarningLogged=true;getLogger().warning("AuthMe authentication check failed; spawn access is denied until it recovers: "+e);}return false;}}
  private boolean isBuilder(User u){
   if(u==null)return false;
   Player online=Bukkit.getPlayer(u.getUniqueId());if(online!=null)return online.hasPermission("fiesta.tag.builder");
@@ -145,7 +150,7 @@ public final class SpawnGuard extends JavaPlugin implements Listener {
   String tag=a[2].toLowerCase(Locale.ROOT);boolean giving=action.equals("grant");Node node=Node.builder("fiesta.tag."+tag).build();Node denied=Node.builder("fiesta.tag."+tag).value(false).build();
   luck.getUserManager().modifyUser(id,u->{if(tag.equals("builder")){u.data().remove(node);u.data().remove(denied);u.data().add(giving?node:denied);}else if(giving)u.data().add(node);else u.data().remove(node);loadedGrantors.put(id,u);}).whenComplete((v,err)->Bukkit.getScheduler().runTask(this,()->{
    if(err!=null){msg(s,"§cTag update failed; no success was reported.");getLogger().warning("Tag update failed: "+err);return;}
-   if(!giving&&tag.equals("builder")){Set<UUID> old=grants.remove(id);if(old!=null)try{saveTrust();}catch(IOException e){grants.put(id,old);getLogger().severe("Trust save failed after builder revocation: "+e);msg(s,"§cCould not save trust revocation; contact an admin.");return;}}
+   if(!giving&&tag.equals("builder")){Set<UUID> old=grants.remove(id);if(old!=null)try{saveTrust();}catch(IOException e){grants.put(id,old);getLogger().severe("Trust save failed after builder revocation: "+e);msg(s,"§cCould not save trust revocation; contact an admin.");return;}grantorIds.remove(id);loadedGrantors.remove(id);}
    getLogger().info("Tag "+action+" "+tag+" for "+id+" by "+s.getName());msg(s,"§aTag "+tag+" "+(giving?"granted to ":"removed from ")+target.getName()+".");
   }));return true;
  }
@@ -173,9 +178,10 @@ public final class SpawnGuard extends JavaPlugin implements Listener {
    Set<UUID> set=grants.computeIfAbsent(owner,k->new HashSet<>());boolean changed=add?set.add(id):set.remove(id);
    if(!changed){msg(s,add?"§eAlready trusted.":"§eThat player is not on this list.");return;}
    try{saveTrust();}catch(IOException ex){if(add)set.remove(id);else set.add(id);msg(s,"§cCould not save trust; no change was applied.");getLogger().severe("Trust save failed: "+ex);return;}
+   grantorIds.add(owner);
    getLogger().info("Trust "+(add?"added ":"removed ")+id+" by "+s.getName()+" for builder "+owner);msg(s,"§a"+target.getName()+(add?" can now help build at spawn.":" was removed from this trust list."));
    if(onSuccess!=null)onSuccess.run();
-  })).exceptionally(ex->{Bukkit.getScheduler().runTask(this,()->msg(s,"§cCould not check builder permissions."));return null;});return true;
+  })).exceptionally(ex->{getLogger().warning("Could not load builder permissions for a trust change: "+ex);Bukkit.getScheduler().runTask(this,()->msg(s,"§cCould not check builder permissions."));return null;});return true;
  }
  private boolean canManage(Player p,UUID owner){return signedIn(p)&&(p.hasPermission("fiesta.spawntrust.admin")||(p.getUniqueId().equals(owner)&&p.hasPermission("fiesta.tag.builder")));}
  private static final class TrustMenu implements InventoryHolder {
@@ -246,11 +252,11 @@ public final class SpawnGuard extends JavaPlugin implements Listener {
    }
   }
  }
- @EventHandler(priority=EventPriority.HIGHEST,ignoreCancelled=true) public void entityInteract(PlayerInteractEntityEvent e){if(blocked(e.getPlayer(),e.getRightClicked().getLocation())&&!(e.getRightClicked() instanceof Player))e.setCancelled(true);}
+ @EventHandler(priority=EventPriority.HIGHEST,ignoreCancelled=true) public void entityInteract(PlayerInteractEntityEvent e){Entity target=e.getRightClicked();if((target instanceof ArmorStand||target instanceof Hanging)&&blocked(e.getPlayer(),target.getLocation()))e.setCancelled(true);}
  @EventHandler(priority=EventPriority.HIGHEST,ignoreCancelled=true) public void entityDamage(EntityDamageByEntityEvent e){if(e.getEntity() instanceof Player||e.getEntity() instanceof Enemy)return;Player p=actor(e.getDamager());if(p!=null&&blocked(p,e.getEntity().getLocation()))e.setCancelled(true);}
  @EventHandler(priority=EventPriority.HIGHEST,ignoreCancelled=true) public void environmentalHanging(org.bukkit.event.hanging.HangingBreakEvent e){if(inside(e.getEntity().getLocation())&&e.getCause()!=org.bukkit.event.hanging.HangingBreakEvent.RemoveCause.ENTITY)e.setCancelled(true);}
  @EventHandler(priority=EventPriority.HIGHEST,ignoreCancelled=true) public void explosiveDamage(EntityDamageEvent e){if(!(e.getEntity() instanceof Player)&&inside(e.getEntity().getLocation())&&(e.getCause()==EntityDamageEvent.DamageCause.ENTITY_EXPLOSION||e.getCause()==EntityDamageEvent.DamageCause.BLOCK_EXPLOSION))e.setCancelled(true);}
- private boolean worldContainer(Inventory inv){InventoryHolder h=inv.getHolder();return h instanceof BlockState||h instanceof DoubleChest||h instanceof Entity&&!(h instanceof Player);}
+ private boolean worldContainer(Inventory inv){InventoryHolder h=inv.getHolder();return h instanceof BlockState||h instanceof DoubleChest||h instanceof Entity&&!(h instanceof Player)&&inv.getType()!=InventoryType.MERCHANT;}
  @EventHandler(priority=EventPriority.HIGHEST,ignoreCancelled=true) public void inventoryClick(InventoryClickEvent e){Inventory top=e.getView().getTopInventory();if(worldContainer(top)&&e.getWhoClicked() instanceof Player&&blocked((Player)e.getWhoClicked(),top.getLocation()))e.setCancelled(true);}
  @EventHandler(priority=EventPriority.HIGHEST,ignoreCancelled=true) public void inventoryDrag(InventoryDragEvent e){Inventory top=e.getView().getTopInventory();if(worldContainer(top)&&e.getWhoClicked() instanceof Player&&blocked((Player)e.getWhoClicked(),top.getLocation()))e.setCancelled(true);}
  @EventHandler(priority=EventPriority.HIGHEST,ignoreCancelled=true) public void entityBreak(org.bukkit.event.hanging.HangingBreakByEntityEvent e){Player p=actor(e.getRemover());if(p!=null&&blocked(p,e.getEntity().getLocation()))e.setCancelled(true);}

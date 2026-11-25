@@ -3,13 +3,32 @@ set -euo pipefail
 root=${FIESTA_SERVER_DIR:?Set FIESTA_SERVER_DIR to a compatible test server installation}
 repo=$(cd "$(dirname "$0")/.." && pwd)
 [[ ${ACCEPT_EULA:-} == yes ]] || { echo "Set ACCEPT_EULA=yes only if you accept the Minecraft EULA." >&2; exit 1; }
+auth=${AUTHME_JAR:-}
+if [[ -z "$auth" ]]; then
+  mapfile -t auth_jars < <(find "$root/plugins" -maxdepth 1 -type f -name 'AuthMe-*-Paper.jar' -print | sort)
+  [[ ${#auth_jars[@]} -eq 1 ]] || { echo "Expected one enabled AuthMe-*-Paper.jar in $root/plugins; set AUTHME_JAR to choose one." >&2; exit 1; }
+  auth=${auth_jars[0]}
+fi
+[[ -f "$auth" ]] || { echo "Missing AuthMe dependency: $auth" >&2; exit 1; }
 work=$(mktemp -d /tmp/fiesta-guard-fixture.XXXXXXXX)
 echo "Fixture directory: $work"
 mkdir -p "$work/server/plugins/AuthMe" "$work/server/plugins/FiestaSpawnGuard" "$work/classes"
 classpath=$(find "$root/libraries" -name '*.jar' -print | paste -sd:)
+annotations=${ANNOTATIONS_JAR:-}
+if [[ -z "$annotations" ]]; then
+  annotations=$(find "$root/libraries" -type f -path '*/org/jetbrains/annotations/*/annotations-*.jar' -print -quit)
+fi
+if [[ -z "$annotations" ]]; then
+  for candidate in "$root"/plugins/*/libs/org/jetbrains/annotations/*/annotations-*.jar; do
+    [[ -f "$candidate" ]] || continue
+    annotations=$candidate
+    break
+  done
+fi
+[[ -n "$annotations" ]] || { echo "Missing org.jetbrains:annotations in the test server dependencies." >&2; exit 1; }
 cp --reflink=auto "$root/server.jar" "$work/server/server.jar"
 cp -a --reflink=auto "$root/versions" "$root/libraries" "$root/cache" "$work/server/"
-for f in AuthMe-6.0.0-Paper.jar LuckPerms-Bukkit-5.5.71.jar; do cp --reflink=auto "$root/plugins/$f" "$work/server/plugins/"; done
+cp --reflink=auto "$auth" "$root/plugins/LuckPerms-Bukkit-5.5.71.jar" "$work/server/plugins/"
 cp "$repo/build/FiestaSpawnGuard.jar" "$work/server/plugins/FiestaSpawnGuard.jar"
 cat > "$work/server/plugins/FiestaSpawnGuard/config.yml" <<'CONFIG'
 world: world
@@ -39,7 +58,7 @@ generate-structures=false
 spawn-protection=0
 level-type=minecraft:flat
 PROPS
-javac -proc:none -cp "$root/plugins/AuthMe-6.0.0-Paper.jar:$root/libraries/org/purpurmc/purpur/purpur-api/1.21.11-R0.1-SNAPSHOT/purpur-api-1.21.11-R0.1-SNAPSHOT.jar:$classpath" -d "$work/classes" "$repo/test/GuardFixture.java"
+javac -proc:none -cp "$auth:$annotations:$root/libraries/org/purpurmc/purpur/purpur-api/1.21.11-R0.1-SNAPSHOT/purpur-api-1.21.11-R0.1-SNAPSHOT.jar:$classpath" -d "$work/classes" "$repo/test/GuardFixture.java"
 cat > "$work/classes/plugin.yml" <<'PLUGIN'
 name: FiestaGuardFixture
 version: 1.0

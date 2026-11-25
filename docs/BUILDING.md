@@ -7,7 +7,7 @@ The provided build script deliberately consumes dependencies from a compatible l
 ```text
 server.jar
 libraries/org/purpurmc/purpur/purpur-api/1.21.11-R0.1-SNAPSHOT/purpur-api-1.21.11-R0.1-SNAPSHOT.jar
-plugins/AuthMe-6.0.0-Paper.jar
+plugins/AuthMe-*-Paper.jar (exactly one enabled AuthMe JAR)
 plugins/LuckPerms-Bukkit-5.5.71.jar
 ```
 
@@ -17,11 +17,13 @@ Run:
 FIESTA_SERVER_DIR=/path/to/test-server ./scripts/build.sh
 ```
 
+The scripts select the only `AuthMe-*-Paper.jar` in the plugins directory. If a test directory contains more than one enabled version, set `AUTHME_JAR=/path/to/AuthMe-Paper.jar` explicitly.
+
 The output is `build/FiestaSpawnGuard.jar`. The script compiles with `--release 21`. Use dependencies you are entitled to obtain and run under their own licenses. This is an environment-dependent build, not a published Maven or Gradle project; snapshots or different dependency versions may require adapting the script and retesting.
 
 ## Isolated integration fixture
 
-The fixture makes a temporary loopback-only offline-mode server with disposable worlds, fake accounts and a test password; it does not use or copy your production plugin data. It copies the specified server's `server.jar`, `libraries`, `versions`, and `cache`, plus the two plugin binaries. Run it against a **dedicated test installation**, never a production server directory whose files may be changing. It needs sufficient disk space, bash, Java 21+, Node.js, `minecraft-protocol` 1.66.2, `rg`, Python 3, `timeout`, `nice`, and `ionice`. Install Node dependencies outside this repository if desired and set `NODE_PATH` to their `node_modules` directory.
+The fixture makes a temporary loopback-only offline-mode server with disposable worlds, fake accounts and a test password; it does not use or copy your production plugin data. It copies the specified server's `server.jar`, `libraries`, `versions`, and `cache`, plus the two plugin binaries. Run it against a **dedicated test installation**, never a production server directory whose files may be changing. It needs sufficient disk space, bash, Java 21+, Node.js, `minecraft-protocol` 1.66.2, the server's `org.jetbrains:annotations` JAR, `rg`, Python 3, `timeout`, `nice`, and `ionice`. Install Node dependencies outside this repository if desired and set `NODE_PATH` to their `node_modules` directory.
 
 ```sh
 FIESTA_SERVER_DIR=/path/to/test-server ./scripts/build.sh
