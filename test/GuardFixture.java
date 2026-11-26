@@ -125,7 +125,6 @@ public final class GuardFixture extends JavaPlugin implements Listener {
  }catch(Throwable t){fail(t);}}
  private void afterGuiCleanup(Player b,Player f,Player v,Location in){try{
   check(breaking(v,in),"GUI confirmation removed helper");
-  Bukkit.dispatchCommand(b,"trust GuardVisitor builder");
   Bukkit.dispatchCommand(f,"trust GuardVisitor builder");
   Bukkit.dispatchCommand(f,"trust GuardVisitor player");
   Bukkit.getScheduler().runTaskLater(this,()->afterDelegation(b,f,v,in),50L);
@@ -140,7 +139,7 @@ public final class GuardFixture extends JavaPlugin implements Listener {
   }catch(Throwable t){fail(t);}},60L);
  }catch(Throwable t){fail(t);}}
  private void opDefault(Player p,Player v,Location in){try{
-  check(breaking(p,in),"admin revoked offline builder trust");p.setOp(true);
+  check(breaking(p,in),"admin revoked offline builder trust");Bukkit.dispatchCommand(Bukkit.getConsoleSender(),"lp user GuardFriend permission unset fiesta.tag.builder");p.setOp(true);
   Bukkit.getScheduler().runTaskLater(this,()->{try{
    check(p.hasPermission("fiesta.tag.builder")&&!breaking(p,in),"operator receives builder by default");
    Bukkit.dispatchCommand(p,"trust remove GuardFriend builder");
