@@ -184,7 +184,6 @@ public final class SpawnGuard extends JavaPlugin implements Listener {
   luck.getUserManager().loadUser(owner).thenAccept(u->Bukkit.getScheduler().runTask(this,()->{
    if(s instanceof Player&&(!((Player)s).isOnline()||!canManage((Player)s,owner))){msg(s,"§cYou no longer have permission to manage this list.");return;}
    loadedGrantors.put(owner,u);
-   if(add&&!isBuilder(u)){msg(s,"§cThat player does not have the builder tag.");return;}
    Set<UUID> set=grants.computeIfAbsent(owner,k->new HashSet<>());boolean changed=add?set.add(id):set.remove(id);
    if(!changed){msg(s,add?"§eAlready trusted.":"§eThat player is not on this list.");return;}
    try{saveTrust();}catch(IOException ex){if(add)set.remove(id);else set.add(id);msg(s,"§cCould not save trust; no change was applied.");getLogger().severe("Trust save failed: "+ex);return;}
@@ -242,8 +241,8 @@ public final class SpawnGuard extends JavaPlugin implements Listener {
   String name=Bukkit.getOfflinePlayer(target).getName(),ownerName=Bukkit.getOfflinePlayer(owner).getName();
   if(name==null||ownerName==null){msg(p,"§cPlayer name unavailable; use the command instead.");return;}
   String[] args=p.hasPermission("fiesta.spawntrust.admin")?new String[]{add?"add":"remove",name,ownerName}:new String[]{add?"add":"remove",name};
-  Inventory opened=p.getOpenInventory().getTopInventory();
-  trust(p,args,()->{if(p.isOnline()&&p.getOpenInventory().getTopInventory().equals(opened))showTrustMenu(p,owner,page,false,null);});
+  TrustMenu opened=(TrustMenu)p.getOpenInventory().getTopInventory().getHolder();
+  trust(p,args,()->{if(p.isOnline()&&p.getOpenInventory().getTopInventory().getHolder()==opened)showTrustMenu(p,owner,page,false,null);});
  }
  @EventHandler(priority=EventPriority.HIGHEST) public void menuDrag(InventoryDragEvent e){if(e.getView().getTopInventory().getHolder() instanceof TrustMenu)e.setCancelled(true);}
  @EventHandler(priority=EventPriority.HIGHEST,ignoreCancelled=true) public void place(BlockPlaceEvent e){if(blocked(e.getPlayer(),e.getBlock().getLocation()))e.setCancelled(true);}
