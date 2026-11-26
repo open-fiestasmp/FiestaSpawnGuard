@@ -22,7 +22,7 @@ public final class GuardFixture extends JavaPlugin implements Listener {
   try{AuthMeApi.getInstance().forceRegister(p,fixturePassword,true);Bukkit.getScheduler().runTaskLater(this,()->{
    if(!AuthMeApi.getInstance().isAuthenticated(p))AuthMeApi.getInstance().forceLogin(p);
    Bukkit.getScheduler().runTaskLater(this,()->{
-    if(AuthMeApi.getInstance().isAuthenticated(p))authenticated.add(p.getUniqueId());
+    if(AuthMeApi.getInstance().isAuthenticated(p)){authenticated.add(p.getUniqueId());p.setGameMode(GameMode.CREATIVE);p.setInvulnerable(true);}
     if(!started&&authenticated.size()==3){started=true;Bukkit.getScheduler().runTaskLater(this,this::run,40L);}
    },40L);
   },80L);}catch(Throwable ex){fail(ex);}
@@ -61,8 +61,14 @@ public final class GuardFixture extends JavaPlugin implements Listener {
   check(b.hasPermission("fiesta.tag.builder"),"builder permission set via LuckPerms");
   check(!breaking(b,in),"builder allowed inside");
   check(breaking(f,in),"friend blocked before trust");
+  Bukkit.dispatchCommand(Bukkit.getConsoleSender(),"lp user GuardBuilder permission set fiesta.spawntag.manage false");
+  Bukkit.dispatchCommand(Bukkit.getConsoleSender(),"lp user GuardBuilder permission set fiesta.spawntrust.admin false");
   b.setOp(true);
-  Bukkit.dispatchCommand(b,"trust");check(b.getOpenInventory().getTopInventory().getHolder().getClass().getName().contains("StaffMenu"),"operator opens staff role menu");
+  Bukkit.getScheduler().runTaskLater(this,()->staffMenuOpen(b,f,v,in),30L);
+ }catch(Throwable t){fail(t);}}
+ private void staffMenuOpen(Player b,Player f,Player v,Location in){try{
+  check(!b.hasPermission("fiesta.spawntag.manage")&&!b.hasPermission("fiesta.spawntrust.admin"),"fixture operator lacks LuckPerms staff nodes");
+  Bukkit.dispatchCommand(b,"trust");check(b.getOpenInventory().getTopInventory().getHolder().getClass().getName().contains("StaffMenu"),"operator opens staff role menu without LuckPerms staff nodes");
   click(b,headSlot(b,"GuardFriend"));check(b.getOpenInventory().getTopInventory().getItem(11).getType()==Material.LIME_CONCRETE,"staff can choose builder access");click(b,11);
   Bukkit.getScheduler().runTaskLater(this,()->staffBuilderGranted(b,f,v,in),50L);
  }catch(Throwable t){fail(t);}}
