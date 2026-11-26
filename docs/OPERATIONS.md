@@ -4,7 +4,7 @@
 - **Builder cannot build:** Authenticate with AuthMe, check `/spawntag list <player>`, LuckPerms permissions and the configured region. Vanilla spawn protection or another protection plugin can still deny an action.
 - **Helper cannot build:** Confirm the name and trust list, that the owner still has builder permission, and that the helper is authenticated. Owner permissions load asynchronously; check LuckPerms and the log.
 - **Cannot add a player:** They need to have joined before. The menu lists online candidates; use a command for a cached offline player. Helpers cannot delegate access.
-- **A GUI is missing or another `/trust` runs:** Check your server's registered commands and other plugins. Use the plugin's namespaced command or `/spawntrust` if needed; check your server's command conflict policy.
+- **The wrong `/trust` GUI opens:** Staff use `/trust` for the role picker and `/trust gui` for their own helper list. Builders use `/trust` or `/trust gui` for their helper list. Check registered commands if another plugin owns `/trust`; use `/fiestaspawnguard:trust` or `/spawntrust` if the server reports a command conflict.
 - **Trust save failed:** Check filesystem ownership, permissions, free space and logs. The plugin reports failure rather than reporting success. Do not edit the file live.
 - **Changes not taking effect:** Configuration and plugin JAR changes require a normal server restart. Verify the startup log and repeat permission and protection checks.
 

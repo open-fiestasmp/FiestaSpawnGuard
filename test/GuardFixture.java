@@ -61,18 +61,42 @@ public final class GuardFixture extends JavaPlugin implements Listener {
   check(b.hasPermission("fiesta.tag.builder"),"builder permission set via LuckPerms");
   check(!breaking(b,in),"builder allowed inside");
   check(breaking(f,in),"friend blocked before trust");
- Bukkit.dispatchCommand(b,"trust");
- check(b.getOpenInventory().getTopInventory().getHolder().getClass().getName().contains("TrustMenu"),"builder opens empty trust menu");
- check(b.getOpenInventory().getTopInventory().getItem(22).getType()==Material.PAPER,"empty trust menu explains that there are no helpers");
- check(b.getOpenInventory().getTopInventory().getItem(49).getType()==Material.LIME_DYE,"empty trust menu offers to add an online player");
- b.closeInventory();
+  b.setOp(true);
+  Bukkit.dispatchCommand(b,"trust");check(b.getOpenInventory().getTopInventory().getHolder().getClass().getName().contains("StaffMenu"),"operator opens staff role menu");
+  click(b,headSlot(b,"GuardFriend"));check(b.getOpenInventory().getTopInventory().getItem(11).getType()==Material.LIME_CONCRETE,"staff can choose builder access");click(b,11);
+  Bukkit.getScheduler().runTaskLater(this,()->staffBuilderGranted(b,f,v,in),50L);
+ }catch(Throwable t){fail(t);}}
+ private void staffBuilderGranted(Player b,Player f,Player v,Location in){try{
+  check(f.hasPermission("fiesta.tag.builder"),"staff GUI grants builder tag");
+  click(b,11);check(b.getOpenInventory().getTopInventory().getItem(11).getType()==Material.RED_CONCRETE,"staff builder removal asks for confirmation");click(b,11);
+  Bukkit.getScheduler().runTaskLater(this,()->staffBuilderRemoved(b,f,v,in),50L);
+ }catch(Throwable t){fail(t);}}
+ private void staffBuilderRemoved(Player b,Player f,Player v,Location in){try{
+  check(!f.hasPermission("fiesta.tag.builder"),"staff GUI removes builder tag");click(b,22);
+  Bukkit.getScheduler().runTaskLater(this,()->staffHelperTarget(b,f,v,in),5L);
+ }catch(Throwable t){fail(t);}}
+ private void staffHelperTarget(Player b,Player f,Player v,Location in){try{
+  click(b,headSlot(b,"GuardVisitor"));click(b,15);
+  Bukkit.getScheduler().runTaskLater(this,()->staffHelperOwner(b,f,v,in),5L);
+ }catch(Throwable t){fail(t);}}
+ private void staffHelperOwner(Player b,Player f,Player v,Location in){try{
+  click(b,headSlot(b,"GuardBuilder"));
+  Bukkit.getScheduler().runTaskLater(this,()->staffHelperGranted(b,f,v,in),50L);
+ }catch(Throwable t){fail(t);}}
+ private void staffHelperGranted(Player b,Player f,Player v,Location in){try{
+  check(!breaking(v,in),"staff GUI adds helper to selected builder");
+  Bukkit.dispatchCommand(b,"trust remove GuardVisitor player GuardBuilder");
+  Bukkit.getScheduler().runTaskLater(this,()->afterStaffGui(b,f,v,in),50L);
+ }catch(Throwable t){fail(t);}}
+ private void afterStaffGui(Player b,Player f,Player v,Location in){try{
+  check(breaking(v,in),"staff can remove helper access");
   Bukkit.dispatchCommand(b,"trust GuardFriend player");
   Bukkit.getScheduler().runTaskLater(this,()->afterTrust(b,f,v,in),80L);
  }catch(Throwable t){fail(t);}}
  private void afterTrust(Player b,Player f,Player v,Location in){try{
   check(!breaking(f,in),"trusted friend allowed");check(breaking(v,in),"untrusted visitor blocked");
   Bukkit.dispatchCommand(f,"trust");check(f.getOpenInventory().getTopInventory().getHolder()==null||!f.getOpenInventory().getTopInventory().getHolder().getClass().getName().contains("TrustMenu"),"trusted friend cannot open management menu");
-  Bukkit.dispatchCommand(b,"trust");check(b.getOpenInventory().getTopInventory().getHolder().getClass().getName().contains("TrustMenu"),"builder can open trust menu");
+  Bukkit.dispatchCommand(b,"trust gui");check(b.getOpenInventory().getTopInventory().getHolder().getClass().getName().contains("TrustMenu"),"builder can open trust menu");
   check(b.getOpenInventory().getTopInventory().getItem(0).getType()==Material.PLAYER_HEAD,"trusted player visible in menu");
   InventoryClickEvent select=new InventoryClickEvent(b.getOpenInventory(),InventoryType.SlotType.CONTAINER,0,ClickType.LEFT,InventoryAction.PICKUP_ALL);Bukkit.getPluginManager().callEvent(select);check(select.isCancelled(),"menu items cannot be taken");
   Bukkit.getScheduler().runTaskLater(this,()->guiConfirmCancel(b,f,v,in),5L);
@@ -101,7 +125,6 @@ public final class GuardFixture extends JavaPlugin implements Listener {
  }catch(Throwable t){fail(t);}}
  private void afterGuiCleanup(Player b,Player f,Player v,Location in){try{
   check(breaking(v,in),"GUI confirmation removed helper");
-  Bukkit.dispatchCommand(b,"trust GuardVisitor builder");
   Bukkit.dispatchCommand(f,"trust GuardVisitor builder");
   Bukkit.dispatchCommand(f,"trust GuardVisitor player");
   Bukkit.getScheduler().runTaskLater(this,()->afterDelegation(b,f,v,in),50L);
@@ -116,7 +139,7 @@ public final class GuardFixture extends JavaPlugin implements Listener {
   }catch(Throwable t){fail(t);}},60L);
  }catch(Throwable t){fail(t);}}
  private void opDefault(Player p,Player v,Location in){try{
-  check(breaking(p,in),"admin revoked offline builder trust");p.setOp(true);
+  check(breaking(p,in),"admin revoked offline builder trust");Bukkit.dispatchCommand(Bukkit.getConsoleSender(),"lp user GuardFriend permission unset fiesta.tag.builder");p.setOp(true);
   Bukkit.getScheduler().runTaskLater(this,()->{try{
    check(p.hasPermission("fiesta.tag.builder")&&!breaking(p,in),"operator receives builder by default");
    Bukkit.dispatchCommand(p,"trust remove GuardFriend builder");
@@ -128,7 +151,7 @@ public final class GuardFixture extends JavaPlugin implements Listener {
   Bukkit.dispatchCommand(p,"trust GuardFriend builder");
   Bukkit.getScheduler().runTaskLater(this,()->{try{
    check(p.hasPermission("fiesta.tag.builder")&&!breaking(p,in),"operator can restore own builder tag");
-   Bukkit.dispatchCommand(p,"trust");click(p,49);
+   Bukkit.dispatchCommand(p,"trust gui");click(p,49);
    Bukkit.getScheduler().runTaskLater(this,()->{try{
     click(p,headSlot(p,"GuardFriend"));
     Bukkit.getScheduler().runTaskLater(this,()->selfAdded(p,v,in),40L);
