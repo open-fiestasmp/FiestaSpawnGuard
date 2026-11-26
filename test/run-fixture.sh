@@ -10,7 +10,9 @@ if [[ -z "$auth" ]]; then
   auth=${auth_jars[0]}
 fi
 [[ -f "$auth" ]] || { echo "Missing AuthMe dependency: $auth" >&2; exit 1; }
-work=$(mktemp -d /tmp/fiesta-guard-fixture.XXXXXXXX)
+work_root=${FIESTA_FIXTURE_TMPDIR:-/tmp}
+mkdir -p "$work_root"
+work=$(mktemp -d "$work_root/fiesta-guard-fixture.XXXXXXXX")
 echo "Fixture directory: $work"
 mkdir -p "$work/server/plugins/AuthMe" "$work/server/plugins/FiestaSpawnGuard" "$work/classes"
 classpath=$(find "$root/libraries" -name '*.jar' -print | paste -sd:)
@@ -69,7 +71,7 @@ PLUGIN
 jar cf "$work/server/plugins/fixture.jar" -C "$work/classes" .
 (cd "$work/server"; exec nice -n 15 ionice -c3 timeout 300s java -Xms256M -Xmx1200M -XX:ActiveProcessorCount=2 -jar server.jar --nogui) > "$work/fixture.log" 2>&1 &
 pid=$!
-trap 'kill "$pid" 2>/dev/null || true' EXIT
+trap 'kill "$pid" 2>/dev/null || true; rm -rf -- "$work"' EXIT
 ready=false
 for _ in {1..150};do if rg -q GUARD_FIXTURE_READY "$work/fixture.log";then ready=true;break;fi;if ! kill -0 "$pid" 2>/dev/null;then break;fi;sleep 1;done
 if [[ "$ready" != true ]];then tail -35 "$work/fixture.log";exit 1;fi

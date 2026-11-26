@@ -80,15 +80,21 @@ public final class SpawnGuard extends JavaPlugin implements Listener {
  private boolean signedIn(Player p){try{return AuthMeApi.getInstance().isAuthenticated(p);}catch(RuntimeException e){if(!authApiWarningLogged){authApiWarningLogged=true;getLogger().warning("AuthMe authentication check failed; spawn access is denied until it recovers: "+e);}return false;}}
  private boolean isBuilder(User u){
   if(u==null)return false;
-  Player online=Bukkit.getPlayer(u.getUniqueId());if(online!=null)return online.hasPermission("fiesta.tag.builder");
+  Player online=Bukkit.getPlayer(u.getUniqueId());if(online!=null&&online.hasPermission("fiesta.tag.builder"))return true;
   Tristate value=u.getCachedData().getPermissionData().checkPermission("fiesta.tag.builder");
   if(value==Tristate.TRUE)return true;
   if(!Bukkit.getOfflinePlayer(u.getUniqueId()).isOp())return false;
   return u.resolveInheritedNodes(QueryOptions.nonContextual()).stream().noneMatch(n->!n.getValue()&&(n.getKey().equals("fiesta.tag.builder")||n.getKey().equals("fiesta.tag.*")||n.getKey().equals("fiesta.*")||n.getKey().equals("*")));
  }
+ private boolean isBuilder(Player p){
+  User user=luck.getUserManager().getUser(p.getUniqueId());
+  return user==null?(p.hasPermission("fiesta.tag.builder")||p.isOp()):isBuilder(user);
+ }
+ private boolean hasTagManagement(CommandSender s){return s.hasPermission("fiesta.spawntag.manage")||(s instanceof Player&&((Player)s).isOp());}
+ private boolean hasTrustAdmin(CommandSender s){return s.hasPermission("fiesta.spawntrust.admin")||(s instanceof Player&&((Player)s).isOp());}
  private boolean allowed(Player p){
   if(!ready||!signedIn(p))return false;
-  if(p.hasPermission("fiesta.tag.builder"))return true;
+  if(isBuilder(p))return true;
   UUID target=p.getUniqueId();
   for(var e:grants.entrySet())if(e.getValue().contains(target)&&isBuilder(loadedGrantors.get(e.getKey())))return true;
   return false;
@@ -112,7 +118,7 @@ public final class SpawnGuard extends JavaPlugin implements Listener {
   if(a.length==0){
    if(!(s instanceof Player)){msg(s,"§cThe trust menu is available in game.");return true;}
    Player p=(Player)s;
-   if(p.hasPermission("fiesta.spawntag.manage")){showStaffTargets(p,0);return true;}
+   if(hasTagManagement(p)){showStaffTargets(p,0);return true;}
    UUID owner=p.getUniqueId();
    if(!canManage(p,owner)){msg(p,"§cOnly builders can manage their trust list.");return true;}
    showTrustMenu(p,owner,0,false,null);return true;
@@ -121,7 +127,7 @@ public final class SpawnGuard extends JavaPlugin implements Listener {
    if(!(s instanceof Player)){msg(s,"§cThe trust menu is available in game.");return true;}
    if(a.length>2){msg(s,"§e/trust gui [builder]");return true;}
    Player p=(Player)s;UUID owner=p.getUniqueId();
-   if(a.length==2){if(!p.hasPermission("fiesta.spawntrust.admin")){msg(p,"§cOnly staff can manage another builder's list.");return true;}OfflinePlayer b=known(a[1]);if(b==null){msg(p,"§cBuilder not found.");return true;}owner=b.getUniqueId();}
+   if(a.length==2){if(!hasTrustAdmin(p)){msg(p,"§cOnly staff can manage another builder's list.");return true;}OfflinePlayer b=known(a[1]);if(b==null){msg(p,"§cBuilder not found.");return true;}owner=b.getUniqueId();}
    if(!canManage(p,owner)){msg(p,"§cOnly builders can manage their trust list.");return true;}
    showTrustMenu(p,owner,0,false,null);return true;
   }
@@ -132,14 +138,14 @@ public final class SpawnGuard extends JavaPlugin implements Listener {
   String target=a[offset];String type=a.length>offset+1?a[offset+1].toLowerCase(Locale.ROOT):"player";
   if(type.equals("builder")){
    if(a.length!=offset+2){msg(s,"§e/trust <player> builder or /trust remove <player> builder");return true;}
-   if(!s.hasPermission("fiesta.spawntag.manage")){msg(s,"§cOnly staff can grant or remove the builder tag.");return true;}
+   if(!hasTagManagement(s)){msg(s,"§cOnly staff can grant or remove the builder tag.");return true;}
    return tag(s,new String[]{remove?"revoke":"grant",target,"builder"});
   }
   if(!type.equals("player")){msg(s,"§cChoose player or builder.");return true;}
   String action=remove?"remove":"add";
   if(a.length==offset+3)return trust(s,new String[]{action,target,a[offset+2]});
-  if(s instanceof Player&&((Player)s).hasPermission("fiesta.tag.builder"))return trust(s,new String[]{action,target});
-  if(s.hasPermission("fiesta.spawntrust.admin")){msg(s,"§eSpecify the builder: /trust "+(remove?"remove ":"")+target+" player <builder-owner>");return true;}
+  if(s instanceof Player&&isBuilder((Player)s))return trust(s,new String[]{action,target});
+  if(hasTrustAdmin(s)){msg(s,"§eSpecify the builder: /trust "+(remove?"remove ":"")+target+" player <builder-owner>");return true;}
   return trust(s,new String[]{action,target});
  }
  @Override public java.util.List<String> onTabComplete(CommandSender sender,Command command,String alias,String[] args){
@@ -147,16 +153,16 @@ public final class SpawnGuard extends JavaPlugin implements Listener {
   java.util.List<String> result=new java.util.ArrayList<>();
   boolean remove=args.length>0&&args[0].equalsIgnoreCase("remove");int offset=remove?1:0;
   if(args.length==1){result.add("gui");result.add("list");result.add("remove");for(Player p:Bukkit.getOnlinePlayers())result.add(p.getName());}
-  else if(args.length==2&&args[0].equalsIgnoreCase("gui")&&sender.hasPermission("fiesta.spawntrust.admin")){for(Player p:Bukkit.getOnlinePlayers())result.add(p.getName());}
+  else if(args.length==2&&args[0].equalsIgnoreCase("gui")&&hasTrustAdmin(sender)){for(Player p:Bukkit.getOnlinePlayers())result.add(p.getName());}
   else if(args.length==offset+1){for(Player p:Bukkit.getOnlinePlayers())result.add(p.getName());}
-  else if(args.length==offset+2){result.add("player");if(sender.hasPermission("fiesta.spawntag.manage"))result.add("builder");}
-  else if(args.length==offset+3&&sender.hasPermission("fiesta.spawntrust.admin")){for(Player p:Bukkit.getOnlinePlayers())result.add(p.getName());}
+  else if(args.length==offset+2){result.add("player");if(hasTagManagement(sender))result.add("builder");}
+  else if(args.length==offset+3&&hasTrustAdmin(sender)){for(Player p:Bukkit.getOnlinePlayers())result.add(p.getName());}
   String prefix=args.length==0?"":args[args.length-1].toLowerCase(Locale.ROOT);
   return result.stream().filter(x->x.toLowerCase(Locale.ROOT).startsWith(prefix)).sorted().collect(Collectors.toList());
  }
  private boolean tag(CommandSender s,String[] a){return tag(s,a,null);}
  private boolean tag(CommandSender s,String[] a,Runnable onSuccess){
-  if(!s.hasPermission("fiesta.spawntag.manage")){msg(s,"§cOnly staff can manage tags.");return true;}
+  if(!hasTagManagement(s)){msg(s,"§cOnly staff can manage tags.");return true;}
   if(a.length<2){msg(s,"§e/spawntag <grant|revoke|list> <player> [tag]");return true;}
   String action=a[0].toLowerCase(Locale.ROOT);OfflinePlayer target=known(a[1]);
   if(target==null){msg(s,"§cPlayer not found. They must have joined before.");return true;}
@@ -176,13 +182,13 @@ public final class SpawnGuard extends JavaPlugin implements Listener {
  private boolean trust(CommandSender s,String[] a,Runnable onSuccess){
   if(!trustStoreHealthy){msg(s,"§cThe trust file is unreadable. Helpers are denied until staff restore it and restart the server.");return true;}
   if(a.length<1||(!a[0].equalsIgnoreCase("list")&&a.length<2)){msg(s,"§e/spawntrust <add|remove|list> [player] [builder]");return true;}
-  boolean admin=s.hasPermission("fiesta.spawntrust.admin");UUID owner;
+  boolean admin=hasTrustAdmin(s);UUID owner;
   if(a.length>=3||(a[0].equalsIgnoreCase("list")&&a.length>=2)){
    if(!admin){msg(s,"§cOnly staff can manage another builder's list.");return true;}
    String ownerName=a[0].equalsIgnoreCase("list")?a[1]:a[2];OfflinePlayer op=known(ownerName);if(op==null){msg(s,"§cBuilder not found.");return true;}owner=op.getUniqueId();
   }else{
    if(!(s instanceof Player)){msg(s,"§cSpecify a builder.");return true;}Player p=(Player)s;
-   if(!p.hasPermission("fiesta.tag.builder")){msg(s,"§cOnly builders can manage their trust list.");return true;}owner=p.getUniqueId();
+   if(!isBuilder(p)){msg(s,"§cOnly builders can manage their trust list.");return true;}owner=p.getUniqueId();
   }
   if(a[0].equalsIgnoreCase("list")){
    Set<UUID> set=grants.getOrDefault(owner,Collections.emptySet());String names=set.stream().map(id->{OfflinePlayer p=Bukkit.getOfflinePlayer(id);return p.getName()!=null?p.getName():id.toString();}).sorted().collect(Collectors.joining(", "));msg(s,"§7Trusted: §f"+(names.isEmpty()?"none":names));return true;
@@ -202,7 +208,7 @@ public final class SpawnGuard extends JavaPlugin implements Listener {
    if(onSuccess!=null)onSuccess.run();
   })).exceptionally(ex->{getLogger().warning("Could not load builder permissions for a trust change: "+ex);Bukkit.getScheduler().runTask(this,()->msg(s,"§cCould not check builder permissions."));return null;});return true;
  }
- private boolean canManage(Player p,UUID owner){return signedIn(p)&&(p.hasPermission("fiesta.spawntrust.admin")||(p.getUniqueId().equals(owner)&&p.hasPermission("fiesta.tag.builder")));}
+ private boolean canManage(Player p,UUID owner){return signedIn(p)&&(hasTrustAdmin(p)||(p.getUniqueId().equals(owner)&&isBuilder(p)));}
  private static final class TrustMenu implements InventoryHolder {
   final UUID owner; final int page; final boolean adding; final UUID confirm; Inventory inventory;
   final Map<Integer,UUID> entries=new HashMap<>();
@@ -217,7 +223,7 @@ public final class SpawnGuard extends JavaPlugin implements Listener {
   StaffMenu(StaffMenuMode mode,UUID target,int page,boolean builder,boolean loading,int returnPage){this.mode=mode;this.target=target;this.page=page;this.returnPage=returnPage;this.builder=builder;this.loading=loading;}
   public Inventory getInventory(){return inventory;}
  }
- private boolean staffMenuAllowed(Player p){return signedIn(p)&&p.hasPermission("fiesta.spawntag.manage");}
+ private boolean staffMenuAllowed(Player p){return signedIn(p)&&hasTagManagement(p);}
  private String playerName(UUID id){return Optional.ofNullable(Bukkit.getOfflinePlayer(id).getName()).orElse(null);}
  private void showStaffTargets(Player p,int page){
   if(!staffMenuAllowed(p))return;
@@ -236,7 +242,7 @@ public final class SpawnGuard extends JavaPlugin implements Listener {
  private void showStaffActions(Player p,UUID target,int page){
   if(!staffMenuAllowed(p))return;
   Player online=Bukkit.getPlayer(target);
-  if(online!=null){renderStaffActions(p,target,page,online.hasPermission("fiesta.tag.builder"));return;}
+  if(online!=null){renderStaffActions(p,target,page,isBuilder(online));return;}
   String name=Optional.ofNullable(playerName(target)).orElse(target.toString());
   StaffMenu h=new StaffMenu(StaffMenuMode.ACTIONS,target,page,false,true);h.inventory=Bukkit.createInventory(h,27,"§2Spawn role: "+name);
   h.inventory.setItem(13,button(Material.CLOCK,"§eChecking builder access..."));h.inventory.setItem(22,button(Material.ARROW,"§eBack"));h.inventory.setItem(26,button(Material.BARRIER,"§cClose"));p.openInventory(h.inventory);
@@ -265,7 +271,7 @@ public final class SpawnGuard extends JavaPlugin implements Listener {
   if(!staffMenuAllowed(p))return;
   Set<UUID> candidates=new HashSet<>(grantorIds);
   for(OfflinePlayer operator:Bukkit.getOperators())candidates.add(operator.getUniqueId());
-  for(Player online:Bukkit.getOnlinePlayers())if(online.hasPermission("fiesta.tag.builder"))candidates.add(online.getUniqueId());
+  for(Player online:Bukkit.getOnlinePlayers())if(isBuilder(online))candidates.add(online.getUniqueId());
   for(User user:luck.getUserManager().getLoadedUsers())if(isBuilder(user))candidates.add(user.getUniqueId());
   StaffMenu loading=new StaffMenu(StaffMenuMode.OWNERS,target,page,false,true,returnPage);loading.inventory=Bukkit.createInventory(loading,54,"§2Spawn helper: choose builder");
   loading.inventory.setItem(22,button(Material.CLOCK,"§eLoading builder list..."));loading.inventory.setItem(49,button(Material.ARROW,"§eBack"));p.openInventory(loading.inventory);
@@ -273,7 +279,7 @@ public final class SpawnGuard extends JavaPlugin implements Listener {
   CompletableFuture.allOf(pending).whenComplete((ignored,error)->Bukkit.getScheduler().runTask(this,()->{
    if(!p.isOnline()||p.getOpenInventory().getTopInventory().getHolder()!=loading)return;
    if(error!=null){msg(p,"§cCould not load builder access.");showStaffActions(p,target,returnPage);return;}
-   List<UUID> owners=candidates.stream().filter(id->{Player online=Bukkit.getPlayer(id);return online!=null?online.hasPermission("fiesta.tag.builder"):isBuilder(loadedGrantors.get(id));}).sorted(java.util.Comparator.comparing(id->Optional.ofNullable(playerName(id)).orElse(id.toString()),String.CASE_INSENSITIVE_ORDER)).collect(Collectors.toList());
+   List<UUID> owners=candidates.stream().filter(id->{Player online=Bukkit.getPlayer(id);return online!=null?isBuilder(online):isBuilder(loadedGrantors.get(id));}).sorted(java.util.Comparator.comparing(id->Optional.ofNullable(playerName(id)).orElse(id.toString()),String.CASE_INSENSITIVE_ORDER)).collect(Collectors.toList());
    renderStaffOwners(p,target,page,returnPage,owners);
   }));
  }
@@ -368,7 +374,7 @@ public final class SpawnGuard extends JavaPlugin implements Listener {
   if(!canManage(p,owner))return;
   String name=Bukkit.getOfflinePlayer(target).getName(),ownerName=Bukkit.getOfflinePlayer(owner).getName();
   if(name==null||ownerName==null){msg(p,"§cPlayer name unavailable; use the command instead.");return;}
-  String[] args=p.hasPermission("fiesta.spawntrust.admin")?new String[]{add?"add":"remove",name,ownerName}:new String[]{add?"add":"remove",name};
+  String[] args=hasTrustAdmin(p)?new String[]{add?"add":"remove",name,ownerName}:new String[]{add?"add":"remove",name};
   TrustMenu opened=(TrustMenu)p.getOpenInventory().getTopInventory().getHolder();
   trust(p,args,()->{if(p.isOnline()&&p.getOpenInventory().getTopInventory().getHolder()==opened)showTrustMenu(p,owner,page,false,null);});
  }
