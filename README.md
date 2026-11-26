@@ -7,7 +7,7 @@ A Purpur plugin for a protected spawn area with invisible builder tags and build
 - A configurable circular region in the Overworld, measured in chunks.
 - Hidden, extensible `fiesta.tag.<name>` LuckPerms permissions, including `builder`.
 - A separate persisted list for each builder. A helper can have grants from multiple builders.
-- `/trust` inventory menu with pagination, online-player selection and confirmation before removal. Commands also support offline players who have joined before.
+- Staff `/trust` role menu plus builder helper menus, with pagination and confirmation before revoking access. Commands also support offline players who have joined before.
 - Authentication checks through AuthMe; protections against selected player actions, explosions, and boundary-crossing mechanisms.
 - Staff commands to assign multiple tags and manage a particular builder's helpers.
 
@@ -31,7 +31,8 @@ Changing configuration or replacing the JAR requires a restart. Avoid using plug
 
 | Command | Who | What it does |
 | --- | --- | --- |
-| `/trust` or `/trust gui` | Authenticated builder | Open the builder's helper menu. |
+| `/trust` | Authenticated staff | Open the online-player role menu. Choose builder access or add the player to an active builder's helper list. A builder without staff access opens their own helper menu. |
+| `/trust gui` | Authenticated builder or staff | Open your own helper list. |
 | `/trust gui <builder>` | Staff | Open a builder's helper menu. |
 | `/trust <player> player` | Builder | Add a previously known player as a helper. `player` can be omitted. |
 | `/trust remove <player> player` | Builder | Remove a helper from the builder's own list. |
@@ -46,7 +47,7 @@ Changing configuration or replacing the JAR requires a restart. Avoid using plug
 | `/spawntag grant\|revoke <player> <tag>` | Tag staff | Manage a hidden tag. |
 | `/spawntag list <player>` | Tag staff | List directly assigned Fiesta tags. |
 
-In the menu, use the green dye to choose an **online** player. Click an existing helper and confirm to remove them. The list contains helpers, not builders; an empty list does not mean a builder tag failed. Helpers do not need the builder tag. A builder may add and remove themselves as a helper for testing; this adds no building access. Use commands for offline players. Players must be known to the server; an unknown name is rejected. Helper access is not a builder tag, so helpers cannot open their own trust menu or grant access. The separate commands `/spawntrust` and `/spawntag` remain available. If another plugin owns `/trust`, resolve the conflict in your server's command configuration; this plugin also exposes Bukkit's namespaced command. A claim plugin's `/claim trust` is a different command but may have independent rules.
+In the staff role menu, choose an **online** player, then grant or remove their builder tag, or add them as a helper under an active builder. Removing a builder tag asks for confirmation. `/trust gui` opens your helper list; use the green dye to select an online player, and click an existing helper to confirm removal. That list contains helpers, not builders; an empty list does not mean a builder tag failed. Helpers do not need the builder tag. A builder may add and remove themselves as a helper for testing; this adds no building access. Use commands for offline players. Players must be known to the server; an unknown name is rejected. Helper access is not a builder tag, so helpers cannot open their own trust menu or grant access. The separate commands `/spawntrust` and `/spawntag` remain available. If another plugin owns `/trust`, resolve the conflict in your server's command configuration; this plugin also exposes Bukkit's namespaced command. A claim plugin's `/claim trust` is a different command but may have independent rules.
 
 ## Permissions
 
@@ -56,7 +57,7 @@ In the menu, use the green dye to choose an **online** player. Click an existing
 | `fiesta.spawntag.manage` | op | Grant, revoke, or inspect Fiesta tags. |
 | `fiesta.spawntrust.admin` | op | Manage another builder's trust list. |
 
-Operators receive the builder permission by default. Staff can remove that access, including their own, with `/trust remove <name> builder` and restore it with `/trust <name> builder`; the explicit denial overrides the OP default. An operator who is separately trusted by another builder may still build through that independent grant. AuthMe authentication remains required. Avoid granting builder access by broad wildcard unless intended. Tags are permissions, not chat prefixes or suffixes. Use `/spawntag` for additional tag names; only the `builder` tag has behavior in this plugin.
+Operators receive the builder permission by default. Staff can remove that access, including their own, with `/trust remove <name> builder` or the staff role menu; restore it with `/trust <name> builder` or the menu. The explicit denial overrides the OP default. An operator who is separately trusted by another builder may still build through that independent grant. AuthMe authentication remains required. Avoid granting builder access by broad wildcard unless intended. Tags are permissions, not chat prefixes or suffixes. Use `/spawntag` for additional tag names; only the `builder` tag has behavior in this plugin.
 
 ## Configuration and behavior
 

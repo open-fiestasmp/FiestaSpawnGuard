@@ -109,7 +109,15 @@ public final class SpawnGuard extends JavaPlugin implements Listener {
   return false;
  }
  private boolean trustShortcut(CommandSender s,String[] a){
-  if(a.length==0||(a.length>=1&&a[0].equalsIgnoreCase("gui"))){
+  if(a.length==0){
+   if(!(s instanceof Player)){msg(s,"§cThe trust menu is available in game.");return true;}
+   Player p=(Player)s;
+   if(p.hasPermission("fiesta.spawntag.manage")){showStaffTargets(p,0);return true;}
+   UUID owner=p.getUniqueId();
+   if(!canManage(p,owner)){msg(p,"§cOnly builders can manage their trust list.");return true;}
+   showTrustMenu(p,owner,0,false,null);return true;
+  }
+  if(a[0].equalsIgnoreCase("gui")){
    if(!(s instanceof Player)){msg(s,"§cThe trust menu is available in game.");return true;}
    if(a.length>2){msg(s,"§e/trust gui [builder]");return true;}
    Player p=(Player)s;UUID owner=p.getUniqueId();
@@ -146,7 +154,8 @@ public final class SpawnGuard extends JavaPlugin implements Listener {
   String prefix=args.length==0?"":args[args.length-1].toLowerCase(Locale.ROOT);
   return result.stream().filter(x->x.toLowerCase(Locale.ROOT).startsWith(prefix)).sorted().collect(Collectors.toList());
  }
- private boolean tag(CommandSender s,String[] a){
+ private boolean tag(CommandSender s,String[] a){return tag(s,a,null);}
+ private boolean tag(CommandSender s,String[] a,Runnable onSuccess){
   if(!s.hasPermission("fiesta.spawntag.manage")){msg(s,"§cOnly staff can manage tags.");return true;}
   if(a.length<2){msg(s,"§e/spawntag <grant|revoke|list> <player> [tag]");return true;}
   String action=a[0].toLowerCase(Locale.ROOT);OfflinePlayer target=known(a[1]);
@@ -160,7 +169,7 @@ public final class SpawnGuard extends JavaPlugin implements Listener {
   luck.getUserManager().modifyUser(id,u->{if(tag.equals("builder")){u.data().remove(node);u.data().remove(denied);u.data().add(giving?node:denied);}else if(giving)u.data().add(node);else u.data().remove(node);loadedGrantors.put(id,u);}).whenComplete((v,err)->Bukkit.getScheduler().runTask(this,()->{
    if(err!=null){msg(s,"§cTag update failed; no success was reported.");getLogger().warning("Tag update failed: "+err);return;}
    if(!giving&&tag.equals("builder")){Set<UUID> old=grants.remove(id);if(old!=null)try{saveTrust();}catch(IOException e){grants.put(id,old);getLogger().severe("Trust save failed after builder revocation: "+e);msg(s,"§cCould not save trust revocation; contact an admin.");return;}grantorIds.remove(id);loadedGrantors.remove(id);}
-   getLogger().info("Tag "+action+" "+tag+" for "+id+" by "+s.getName());msg(s,"§aTag "+tag+" "+(giving?"granted to ":"removed from ")+target.getName()+".");
+   getLogger().info("Tag "+action+" "+tag+" for "+id+" by "+s.getName());msg(s,"§aTag "+tag+" "+(giving?"granted to ":"removed from ")+target.getName()+".");if(onSuccess!=null)onSuccess.run();
   }));return true;
  }
  private boolean trust(CommandSender s,String[] a){return trust(s,a,null);}
@@ -183,6 +192,7 @@ public final class SpawnGuard extends JavaPlugin implements Listener {
   UUID id=target.getUniqueId();boolean add=a[0].equalsIgnoreCase("add");
   luck.getUserManager().loadUser(owner).thenAccept(u->Bukkit.getScheduler().runTask(this,()->{
    if(s instanceof Player&&(!((Player)s).isOnline()||!canManage((Player)s,owner))){msg(s,"§cYou no longer have permission to manage this list.");return;}
+   if(add&&!isBuilder(u)){msg(s,"§cThat player no longer has builder access.");return;}
    loadedGrantors.put(owner,u);
    Set<UUID> set=grants.computeIfAbsent(owner,k->new HashSet<>());boolean changed=add?set.add(id):set.remove(id);
    if(!changed){msg(s,add?"§eAlready trusted.":"§eThat player is not on this list.");return;}
@@ -198,6 +208,122 @@ public final class SpawnGuard extends JavaPlugin implements Listener {
   final Map<Integer,UUID> entries=new HashMap<>();
   TrustMenu(UUID owner,int page,boolean adding,UUID confirm){this.owner=owner;this.page=page;this.adding=adding;this.confirm=confirm;}
   public Inventory getInventory(){return inventory;}
+ }
+ private enum StaffMenuMode{TARGETS,ACTIONS,OWNERS,CONFIRM_BUILDER}
+ private static final class StaffMenu implements InventoryHolder {
+  final StaffMenuMode mode; final UUID target; final int page,returnPage; final boolean builder,loading; Inventory inventory;
+  final Map<Integer,UUID> entries=new HashMap<>();
+  StaffMenu(StaffMenuMode mode,UUID target,int page,boolean builder,boolean loading){this(mode,target,page,builder,loading,page);}
+  StaffMenu(StaffMenuMode mode,UUID target,int page,boolean builder,boolean loading,int returnPage){this.mode=mode;this.target=target;this.page=page;this.returnPage=returnPage;this.builder=builder;this.loading=loading;}
+  public Inventory getInventory(){return inventory;}
+ }
+ private boolean staffMenuAllowed(Player p){return signedIn(p)&&p.hasPermission("fiesta.spawntag.manage");}
+ private String playerName(UUID id){return Optional.ofNullable(Bukkit.getOfflinePlayer(id).getName()).orElse(null);}
+ private void showStaffTargets(Player p,int page){
+  if(!staffMenuAllowed(p))return;
+  List<Player> targets=Bukkit.getOnlinePlayers().stream().sorted(java.util.Comparator.comparing(Player::getName,String.CASE_INSENSITIVE_ORDER)).collect(Collectors.toList());
+  int maxPage=Math.max(0,(targets.size()-1)/45);page=Math.min(Math.max(0,page),maxPage);
+  StaffMenu h=new StaffMenu(StaffMenuMode.TARGETS,null,page,false,false);h.inventory=Bukkit.createInventory(h,54,"§2Spawn access: choose player");
+  for(int i=page*45;i<Math.min(targets.size(),page*45+45);i++){
+   Player target=targets.get(i);ItemStack head=new ItemStack(Material.PLAYER_HEAD);ItemMeta meta=head.getItemMeta();meta.setDisplayName("§f"+target.getName());meta.setLore(List.of("§7Choose builder or helper access."));head.setItemMeta(meta);int slot=i-page*45;h.entries.put(slot,target.getUniqueId());h.inventory.setItem(slot,head);
+  }
+  if(targets.isEmpty())h.inventory.setItem(22,button(Material.PAPER,"§eNo players are online"));
+  if(page>0)h.inventory.setItem(45,button(Material.ARROW,"§ePrevious page"));
+  if(page<maxPage)h.inventory.setItem(53,button(Material.ARROW,"§eNext page"));
+  h.inventory.setItem(47,button(Material.BOOK,"§eOpen my helper list","§7Manage helpers for your own builder tag."));
+  h.inventory.setItem(49,button(Material.BARRIER,"§cClose"));p.openInventory(h.inventory);
+ }
+ private void showStaffActions(Player p,UUID target,int page){
+  if(!staffMenuAllowed(p))return;
+  Player online=Bukkit.getPlayer(target);
+  if(online!=null){renderStaffActions(p,target,page,online.hasPermission("fiesta.tag.builder"));return;}
+  String name=Optional.ofNullable(playerName(target)).orElse(target.toString());
+  StaffMenu h=new StaffMenu(StaffMenuMode.ACTIONS,target,page,false,true);h.inventory=Bukkit.createInventory(h,27,"§2Spawn role: "+name);
+  h.inventory.setItem(13,button(Material.CLOCK,"§eChecking builder access..."));h.inventory.setItem(22,button(Material.ARROW,"§eBack"));h.inventory.setItem(26,button(Material.BARRIER,"§cClose"));p.openInventory(h.inventory);
+  luck.getUserManager().loadUser(target).whenComplete((user,error)->Bukkit.getScheduler().runTask(this,()->{
+   if(!p.isOnline()||p.getOpenInventory().getTopInventory().getHolder()!=h)return;
+   if(error!=null||user==null){msg(p,"§cCould not check that player's access.");showStaffTargets(p,page);return;}
+   renderStaffActions(p,target,page,isBuilder(user));
+  }));
+ }
+ private void renderStaffActions(Player p,UUID target,int page,boolean builder){
+  if(!staffMenuAllowed(p))return;
+  String name=Optional.ofNullable(playerName(target)).orElse(target.toString());
+  StaffMenu h=new StaffMenu(StaffMenuMode.ACTIONS,target,page,builder,false);h.inventory=Bukkit.createInventory(h,27,"§2Spawn role: "+name);
+  h.inventory.setItem(11,button(builder?Material.RED_CONCRETE:Material.LIME_CONCRETE,builder?"§cRemove builder tag":"§aGrant builder tag",builder?"§7The player can no longer build at spawn.":"§7The player can build at protected spawn."));
+  h.inventory.setItem(15,button(Material.PLAYER_HEAD,"§aAdd as a helper","§7Choose which builder's list to use.","§7Helpers cannot grant access."));
+  h.inventory.setItem(22,button(Material.ARROW,"§eBack to players"));h.inventory.setItem(26,button(Material.BARRIER,"§cClose"));p.openInventory(h.inventory);
+ }
+ private void showStaffBuilderConfirm(Player p,UUID target,int page){
+  if(!staffMenuAllowed(p))return;
+  String name=Optional.ofNullable(playerName(target)).orElse(target.toString());
+  StaffMenu h=new StaffMenu(StaffMenuMode.CONFIRM_BUILDER,target,page,true,false);h.inventory=Bukkit.createInventory(h,27,"§cRemove builder: "+name);
+  h.inventory.setItem(11,button(Material.RED_CONCRETE,"§cConfirm removal","§7This removes spawn builder access."));
+  h.inventory.setItem(15,button(Material.ARROW,"§eCancel"));h.inventory.setItem(26,button(Material.BARRIER,"§cClose"));p.openInventory(h.inventory);
+ }
+ private void showStaffOwners(Player p,UUID target,int page,int returnPage){
+  if(!staffMenuAllowed(p))return;
+  Set<UUID> candidates=new HashSet<>(grantorIds);
+  for(OfflinePlayer operator:Bukkit.getOperators())candidates.add(operator.getUniqueId());
+  for(Player online:Bukkit.getOnlinePlayers())if(online.hasPermission("fiesta.tag.builder"))candidates.add(online.getUniqueId());
+  for(User user:luck.getUserManager().getLoadedUsers())if(isBuilder(user))candidates.add(user.getUniqueId());
+  StaffMenu loading=new StaffMenu(StaffMenuMode.OWNERS,target,page,false,true,returnPage);loading.inventory=Bukkit.createInventory(loading,54,"§2Spawn helper: choose builder");
+  loading.inventory.setItem(22,button(Material.CLOCK,"§eLoading builder list..."));loading.inventory.setItem(49,button(Material.ARROW,"§eBack"));p.openInventory(loading.inventory);
+  CompletableFuture<?>[] pending=candidates.stream().filter(id->Bukkit.getPlayer(id)==null&&!loadedGrantors.containsKey(id)).map(id->luck.getUserManager().loadUser(id).thenAccept(user->{if(user!=null)loadedGrantors.put(id,user);})).toArray(CompletableFuture[]::new);
+  CompletableFuture.allOf(pending).whenComplete((ignored,error)->Bukkit.getScheduler().runTask(this,()->{
+   if(!p.isOnline()||p.getOpenInventory().getTopInventory().getHolder()!=loading)return;
+   if(error!=null){msg(p,"§cCould not load builder access.");showStaffActions(p,target,returnPage);return;}
+   List<UUID> owners=candidates.stream().filter(id->{Player online=Bukkit.getPlayer(id);return online!=null?online.hasPermission("fiesta.tag.builder"):isBuilder(loadedGrantors.get(id));}).sorted(java.util.Comparator.comparing(id->Optional.ofNullable(playerName(id)).orElse(id.toString()),String.CASE_INSENSITIVE_ORDER)).collect(Collectors.toList());
+   renderStaffOwners(p,target,page,returnPage,owners);
+  }));
+ }
+ private void renderStaffOwners(Player p,UUID target,int page,int returnPage,List<UUID> owners){
+  int maxPage=Math.max(0,(owners.size()-1)/45);page=Math.min(Math.max(0,page),maxPage);
+  String targetName=Optional.ofNullable(playerName(target)).orElse(target.toString());
+  StaffMenu h=new StaffMenu(StaffMenuMode.OWNERS,target,page,false,false,returnPage);h.inventory=Bukkit.createInventory(h,54,"§2Spawn helper: "+targetName);
+  for(int i=page*45;i<Math.min(owners.size(),page*45+45);i++){
+   UUID owner=owners.get(i);String name=Optional.ofNullable(playerName(owner)).orElse(owner.toString());ItemStack head=new ItemStack(Material.PLAYER_HEAD);ItemMeta meta=head.getItemMeta();meta.setDisplayName("§f"+name);meta.setLore(List.of("§7Add the selected player to this list."));head.setItemMeta(meta);int slot=i-page*45;h.entries.put(slot,owner);h.inventory.setItem(slot,head);
+  }
+  if(owners.isEmpty())h.inventory.setItem(22,button(Material.PAPER,"§eNo active builder lists found","§7A builder must be online or have a trust list."));
+  if(page>0)h.inventory.setItem(45,button(Material.ARROW,"§ePrevious page"));
+  if(page<maxPage)h.inventory.setItem(53,button(Material.ARROW,"§eNext page"));
+  h.inventory.setItem(47,button(Material.BOOK,"§eHelpers cannot delegate","§7Only staff and the builder manage this list."));
+  h.inventory.setItem(49,button(Material.ARROW,"§eBack"));p.openInventory(h.inventory);
+ }
+ private void staffMenuClick(Player p,StaffMenu h,int slot){
+  if(h.loading||!staffMenuAllowed(p))return;
+  if(h.mode==StaffMenuMode.TARGETS){
+   if(slot==45&&h.page>0){showStaffTargets(p,h.page-1);return;}
+   if(slot==53){showStaffTargets(p,h.page+1);return;}
+   if(slot==47){showTrustMenu(p,p.getUniqueId(),0,false,null);return;}
+   if(slot==49){p.closeInventory();return;}
+   UUID target=h.entries.get(slot);if(target!=null)showStaffActions(p,target,h.page);return;
+  }
+  if(h.mode==StaffMenuMode.ACTIONS){
+   if(slot==22){showStaffTargets(p,h.page);return;}
+   if(slot==26){p.closeInventory();return;}
+   if(slot==11){
+    String name=playerName(h.target);if(name==null){msg(p,"§cPlayer name unavailable; use /trust <name> builder.");return;}
+    if(h.builder){showStaffBuilderConfirm(p,h.target,h.page);return;}
+    tag(p,new String[]{"grant",name,"builder"},()->showStaffActions(p,h.target,h.page));return;
+   }
+   if(slot==15){showStaffOwners(p,h.target,0,h.page);return;}
+   return;
+  }
+  if(h.mode==StaffMenuMode.CONFIRM_BUILDER){
+   if(slot==15){showStaffActions(p,h.target,h.page);return;}
+   if(slot==26){p.closeInventory();return;}
+   if(slot==11){String name=playerName(h.target);if(name==null){msg(p,"§cPlayer name unavailable; use /trust remove <name> builder.");return;}tag(p,new String[]{"revoke",name,"builder"},()->showStaffActions(p,h.target,h.page));}
+   return;
+  }
+  if(slot==45&&h.page>0){showStaffOwners(p,h.target,h.page-1,h.returnPage);return;}
+  if(slot==53){showStaffOwners(p,h.target,h.page+1,h.returnPage);return;}
+  if(slot==49){showStaffActions(p,h.target,h.returnPage);return;}
+  UUID owner=h.entries.get(slot);if(owner==null)return;
+  String targetName=playerName(h.target),ownerName=playerName(owner);
+  if(targetName==null||ownerName==null){msg(p,"§cPlayer name unavailable; use /trust <player> player <builder>.");return;}
+  if(grants.getOrDefault(owner,Collections.emptySet()).contains(h.target)){msg(p,"§eThat player is already trusted. Use /trust gui "+ownerName+" to remove them.");return;}
+  trust(p,new String[]{"add",targetName,ownerName},()->showStaffActions(p,h.target,h.returnPage));
  }
  private ItemStack button(Material material,String title,String... lore){ItemStack i=new ItemStack(material);ItemMeta m=i.getItemMeta();m.setDisplayName(title);m.setLore(Arrays.asList(lore));i.setItemMeta(m);return i;}
  private void showTrustMenu(Player p,UUID owner,int page,boolean adding,UUID confirm){
@@ -225,7 +351,9 @@ public final class SpawnGuard extends JavaPlugin implements Listener {
  }
  private void nextMenu(Player p,TrustMenu current,int page,boolean adding,UUID confirm){Bukkit.getScheduler().runTask(this,()->{if(p.isOnline()&&p.getOpenInventory().getTopInventory().getHolder()==current)showTrustMenu(p,current.owner,page,adding,confirm);});}
  @EventHandler(priority=EventPriority.HIGHEST) public void menuClick(InventoryClickEvent e){
-  if(!(e.getView().getTopInventory().getHolder() instanceof TrustMenu))return;
+  Object holder=e.getView().getTopInventory().getHolder();
+  if(holder instanceof StaffMenu){e.setCancelled(true);if(e.getWhoClicked() instanceof Player)staffMenuClick((Player)e.getWhoClicked(),(StaffMenu)holder,e.getRawSlot());return;}
+  if(!(holder instanceof TrustMenu))return;
   e.setCancelled(true);if(!(e.getWhoClicked() instanceof Player))return;Player p=(Player)e.getWhoClicked();TrustMenu h=(TrustMenu)e.getView().getTopInventory().getHolder();
   if(!canManage(p,h.owner)){Bukkit.getScheduler().runTask(this,()->{if(p.isOnline()&&p.getOpenInventory().getTopInventory().getHolder()==h)p.closeInventory();});msg(p,"§cYou no longer have permission to manage this list.");return;}
   int slot=e.getRawSlot();if(slot<0||slot>=54)return;
@@ -244,7 +372,7 @@ public final class SpawnGuard extends JavaPlugin implements Listener {
   TrustMenu opened=(TrustMenu)p.getOpenInventory().getTopInventory().getHolder();
   trust(p,args,()->{if(p.isOnline()&&p.getOpenInventory().getTopInventory().getHolder()==opened)showTrustMenu(p,owner,page,false,null);});
  }
- @EventHandler(priority=EventPriority.HIGHEST) public void menuDrag(InventoryDragEvent e){if(e.getView().getTopInventory().getHolder() instanceof TrustMenu)e.setCancelled(true);}
+ @EventHandler(priority=EventPriority.HIGHEST) public void menuDrag(InventoryDragEvent e){Object holder=e.getView().getTopInventory().getHolder();if(holder instanceof TrustMenu||holder instanceof StaffMenu)e.setCancelled(true);}
  @EventHandler(priority=EventPriority.HIGHEST,ignoreCancelled=true) public void place(BlockPlaceEvent e){if(blocked(e.getPlayer(),e.getBlock().getLocation()))e.setCancelled(true);}
  @EventHandler(priority=EventPriority.HIGHEST,ignoreCancelled=true) public void multi(BlockMultiPlaceEvent e){if(e.getReplacedBlockStates().stream().anyMatch(s->blocked(e.getPlayer(),s.getLocation())))e.setCancelled(true);}
  @EventHandler(priority=EventPriority.HIGHEST,ignoreCancelled=true) public void breaks(BlockBreakEvent e){if(blocked(e.getPlayer(),e.getBlock().getLocation()))e.setCancelled(true);}

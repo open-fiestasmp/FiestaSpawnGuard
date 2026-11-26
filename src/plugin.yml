@@ -1,5 +1,5 @@
 name: FiestaSpawnGuard
-version: 1.0.2
+version: 1.0.3
 main: com.fiesta.spawnguard.SpawnGuard
 api-version: '1.21'
 depend: [LuckPerms, AuthMe]
@@ -13,7 +13,7 @@ commands:
     usage: /spawntrust <add|remove|list> [player] [builder]
   trust:
     description: Give or remove spawn builder or helper access
-    usage: /trust <player> <builder|player> [builder-owner]
+    usage: /trust [gui] | /trust <player> <builder|player> [builder-owner]
 permissions:
   fiesta.spawntag.manage:
     default: op
